@@ -10,7 +10,7 @@
     <style>
         /* ============================================
            ESTILOS PRINCIPALES - SecureStream
-           Sistema de Vigilancia Remota con WebRTC
+           Sistema de Vigilancia con Envío de Frames
            ============================================ */
         
         * {
@@ -219,7 +219,7 @@
             font-size: 0.9rem;
         }
 
-        /* Panel de video negro */
+        /* Panel de video/imagen */
         .video-panel {
             background: #000;
             width: 100%;
@@ -231,14 +231,15 @@
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         }
 
-        .video-panel video {
+        .video-panel video,
+        .video-panel img {
             width: 100%;
             height: 100%;
             object-fit: cover;
             display: block;
         }
 
-        /* Canvas superpuesto paramotion boxes */
+        /* Canvas superpuesto para motion boxes */
         #motionCanvas {
             position: absolute;
             top: 0;
@@ -718,9 +719,17 @@
                 <div class="value" id="brightnessLevel">50%</div>
                 <div class="label">Luminosidad</div>
             </div>
+            <div class="stat-item">
+                <div class="value" id="fpsDisplay">15</div>
+                <div class="label">FPS</div>
+            </div>
         </div>
         <div class="video-panel">
-            <video id="localVideo" autoplay playsinline muted></video>
+            <!-- Video local oculto para captura -->
+            <video id="localVideo" autoplay playsinline muted style="display:none;"></video>
+            <!-- Canvas para captura de frames -->
+            <canvas id="captureCanvas" style="display:none;"></canvas>
+            <!-- Canvas para visualización y motion detection -->
             <canvas id="motionCanvas"></canvas>
             <div class="video-overlay">
                 <div class="connection-status">
@@ -755,9 +764,10 @@
             <button class="btn-logout" onclick="logout()">Salir</button>
         </div>
         
-        <!-- Panel negro para ver video -->
+        <!-- Panel para ver video/frames -->
         <div class="video-panel" id="spectatorVideoPanel">
-            <video id="remoteVideo" autoplay playsinline></video>
+            <!-- Imagen que recibe los frames -->
+            <img id="remoteVideo" alt="Video en vivo" style="display:block; width:100%; height:100%; object-fit:cover;">
             <canvas id="remoteMotionCanvas"></canvas>
             <div class="video-overlay">
                 <div class="connection-status">
@@ -835,7 +845,8 @@
     <script>
         /**
          * SecureStream - Cliente de Vigilancia Remota
-         * Implementación WebRTC con Socket.io
+         * Implementación con Envío de Frames vía Socket.io
+         * Simula video con imágenes de alta frecuencia
          */
 
         // ============================================
@@ -843,19 +854,23 @@
         // ============================================
 
         let socket = null;
-        let peerConnection = null;
         let localStream = null;
-        let remoteStream = null;
         let motionCanvas, motionCtx;
+        let captureCanvas, captureCtx;
         let remoteMotionCanvas, remoteMotionCtx;
         let previousFrame = null;
-        let remotePreviousFrame = null;
         let motionDetectionEnabled = true;
         let flashlightOn = false;
         let autoFlashlightEnabled = false;
         let currentRole = null;
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 5;
+
+        // Variables para streaming de frames
+        let frameInterval = null;
+        let currentFrameNumber = 0;
+        let frameQuality = 0.5; // Calidad de compresión JPEG (0.1 - 1.0)
+        let targetFps = 15;
 
         // Estado de la cámara (para el espectador)
         let cameraStatus = {
@@ -864,15 +879,6 @@
             quality: 'media',
             fps: 15,
             connected: false
-        };
-
-        // Configuración de WebRTC
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
-            ]
         };
 
         // ============================================
@@ -904,6 +910,7 @@
             socket.on('disconnect', (reason) => {
                 console.log('Desconectado:', reason);
                 showAuthMessage('Desconectado del servidor. Reconectando...', 'error');
+                stopFrameStreaming();
             });
 
             socket.on('connect_error', (error) => {
@@ -935,15 +942,13 @@
             socket.on('cameraAvailable', handleCameraAvailable);
             socket.on('noCameraAvailable', handleNoCameraAvailable);
 
-            // Eventos WebRTC
-            socket.on('webrtcOffer', handleWebRTCOffer);
-            socket.on('webrtcAnswer', handleWebRTCAnswer);
-            socket.on('webrtcIceCandidate', handleICECandidate);
-
             // Eventos de conexión
             socket.on('connectionStateChange', handleConnectionStateChange);
             socket.on('peerDisconnected', handlePeerDisconnected);
             socket.on('peerConnected', handlePeerConnected);
+
+            // Eventos de video frames (reemplaza WebRTC)
+            socket.on('video_frame', handleVideoFrame);
 
             // Eventos de alertas
             socket.on('motionAlert', handleMotionAlert);
@@ -972,12 +977,11 @@
 
             socket.on('requestCameraStatus', () => {
                 if (currentRole === 'camera') {
-                    // Enviar estado actual de la cámara
                     socket.emit('cameraStatusResponse', {
                         flashlightEnabled: flashlightOn,
                         motionEnabled: motionDetectionEnabled,
                         quality: window.currentQuality || 'media',
-                        fps: window.currentFps || 15
+                        fps: window.currentFps || targetFps
                     });
                 }
             });
@@ -1021,9 +1025,7 @@
             if (role === 'camera') {
                 socket.emit('registerAsCamera');
             } else {
-                // Cambiar inmediatamente a la pantalla del espectador
                 showScreen('spectatorScreen');
-                // Mostrar estado de conexión
                 document.getElementById('spectatorStatus').textContent = 'Conectando al servidor...';
                 document.getElementById('spectatorStatusDot').className = 'status-dot connecting';
                 socket.emit('registerAsSpectator');
@@ -1032,17 +1034,13 @@
 
         function logout() {
             stopCamera();
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
             currentRole = null;
             showScreen('authScreen');
             document.getElementById('password').value = '';
         }
 
         // ============================================
-        // CÁMARA LOCAL
+        // CÁMARA LOCAL Y CAPTURA DE FRAMES
         // ============================================
 
         async function startCamera() {
@@ -1060,17 +1058,27 @@
                 const videoElement = document.getElementById('localVideo');
                 videoElement.srcObject = localStream;
 
+                // Inicializar canvas de captura para enviar frames
+                captureCanvas = document.getElementById('captureCanvas');
+                captureCtx = captureCanvas.getContext('2d');
+
                 // Inicializar canvas para detección de movimiento
                 motionCanvas = document.getElementById('motionCanvas');
                 motionCtx = motionCanvas.getContext('2d');
 
                 // Configurar tamaño del canvas cuando el video esté listo
                 videoElement.onloadedmetadata = () => {
+                    captureCanvas.width = videoElement.videoWidth;
+                    captureCanvas.height = videoElement.videoHeight;
                     motionCanvas.width = videoElement.videoWidth;
                     motionCanvas.height = videoElement.videoHeight;
+                    
                     motionDetectionEnabled = true;
                     previousFrame = null;
-                    detectMotion();
+                    
+                    // Iniciar captura de frames
+                    startFrameCapture();
+                    startMotionDetection();
                     startAutoFlashlight();
                 };
 
@@ -1087,6 +1095,7 @@
         }
 
         function stopCamera() {
+            stopFrameStreaming();
             autoFlashlightEnabled = false;
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
@@ -1096,129 +1105,313 @@
             previousFrame = null;
         }
 
+        /**
+         * Inicia la captura y envío de frames al servidor
+         */
+        function startFrameCapture() {
+            if (frameInterval) {
+                clearInterval(frameInterval);
+            }
+            
+            // Calcular intervalo basado en FPS objetivo
+            const frameIntervalMs = Math.floor(1000 / targetFps);
+            
+            frameInterval = setInterval(() => {
+                if (!localStream || !socket) return;
+                
+                const video = document.getElementById('localVideo');
+                if (video.readyState !== 4) return;
+                
+                // Capturar frame en el canvas de captura
+                captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+                
+                // Convertir a JPEG con calidad comprimida para传输
+                const imageData = captureCanvas.toDataURL('image/jpeg', frameQuality);
+                
+                // Enviar frame al servidor
+                socket.emit('stream_frame', {
+                    image: imageData,
+                    timestamp: Date.now(),
+                    frameNumber: currentFrameNumber++
+                });
+                
+            }, frameIntervalMs);
+            
+            console.log(`[STREAM] Captura iniciada a ${targetFps} FPS (intervalo: ${frameIntervalMs}ms)`);
+        }
+
+        /**
+         * Detiene la captura de frames
+         */
+        function stopFrameStreaming() {
+            if (frameInterval) {
+                clearInterval(frameInterval);
+                frameInterval = null;
+            }
+        }
+
         // ============================================
-        // DETECCIÓN DE MOVIMIENTO CON CUADROS VERDES
+        // RECEPCIÓN DE FRAMES (ESPECTADOR)
+        // ============================================
+
+        function handleVideoFrame(data) {
+            const imgElement = document.getElementById('remoteVideo');
+            if (imgElement) {
+                // Actualizar fuente de la imagen con el frame recibido
+                imgElement.src = data.image;
+            }
+        }
+
+        // ============================================
+        // DETECCIÓN DE MOVIMIENTO INTELIGENTE
         // ============================================
 
         function toggleMotionDetection() {
             motionDetectionEnabled = !motionDetectionEnabled;
             document.getElementById('motionStatus').textContent = motionDetectionEnabled ? 'ON' : 'OFF';
             
-            if (motionDetectionEnabled && localStream) {
-                previousFrame = null;
-                detectMotion();
-            }
-
-            // Notificar al servidor y espectador
             if (socket && currentRole === 'camera') {
                 socket.emit('motionStatusChange', motionDetectionEnabled);
             }
         }
 
-        function detectMotion() {
+        function startMotionDetection() {
             if (!motionDetectionEnabled || !localStream) return;
 
             const video = document.getElementById('localVideo');
-            if (video.readyState !== 4) {
-                requestAnimationFrame(detectMotion);
-                return;
+            
+            const detectFrame = () => {
+                if (!motionDetectionEnabled || !localStream) return;
+                
+                if (video.readyState !== 4) {
+                    requestAnimationFrame(detectFrame);
+                    return;
+                }
+
+                // Capturar frame actual en canvas de motion
+                motionCtx.drawImage(video, 0, 0, motionCanvas.width, motionCanvas.height);
+                const currentFrameData = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+                const currentData = currentFrameData.data;
+
+                if (previousFrame) {
+                    const previousData = previousFrame.data;
+                    
+                    // Detección inteligente de movimiento
+                    const result = detectSmartMotion(currentData, previousData);
+                    
+                    // Actualizar UI
+                    document.getElementById('motionScore').textContent = result.motionPercent.toFixed(1) + '%';
+                    
+                    // Dibujar boxes de movimiento
+                    drawMotionBoxes(result.blobs);
+                    
+                    // Enviar alerta si hay movimiento significativo
+                    if (result.hasSignificantMotion && socket) {
+                        socket.emit('motionDetected', {
+                            score: result.motionPercent,
+                            regions: result.regions,
+                            blobs: result.blobs
+                        });
+                    }
+                }
+
+                // Guardar frame para próxima comparación
+                previousFrame = currentFrameData;
+
+                requestAnimationFrame(detectFrame);
+            };
+
+            detectFrame();
+        }
+
+        /**
+         * Detección inteligente de movimiento con filtrado de ruido
+         * Detecta objetos significativos (personas, puertas) ignorando ruido
+         */
+        function detectSmartMotion(currentData, previousData) {
+            const width = motionCanvas.width;
+            const height = motionCanvas.height;
+            const threshold = 25; // Diferencia mínima para considerar cambio
+            const blockSize = 16; // Tamaño de bloque para análisis
+            
+            // Parámetros de filtrado inteligente
+            const minBlobArea = 500; // Área mínima para considerar como objeto significativo
+            const minPixelChangeInBlob = 0.25; // Mínimo 25% de pixels cambiados en un blob
+            
+            const motionBlocks = [];
+            const blobs = [];
+            const heightBlocks = Math.ceil(height / blockSize);
+            const widthBlocks = Math.ceil(width / blockSize);
+
+            // Paso 1: Encontrar todos los bloques con movimiento
+            for (let by = 0; by < heightBlocks; by++) {
+                for (let bx = 0; bx < widthBlocks; bx++) {
+                    let changedPixels = 0;
+                    let totalPixels = 0;
+
+                    for (let py = 0; py < blockSize && by * blockSize + py < height; py++) {
+                        for (let px = 0; px < blockSize && bx * blockSize + px < width; px++) {
+                            const y = by * blockSize + py;
+                            const x = bx * blockSize + px;
+                            const i = (y * width + x) * 4;
+
+                            const r = Math.abs(currentData[i] - previousData[i]);
+                            const g = Math.abs(currentData[i + 1] - previousData[i + 1]);
+                            const b = Math.abs(currentData[i + 2] - previousData[i + 2]);
+
+                            if (r + g + b > threshold) {
+                                changedPixels++;
+                            }
+                            totalPixels++;
+                        }
+                    }
+
+                    // Bloque tiene suficiente cambio
+                    if (changedPixels / totalPixels > 0.2) {
+                        motionBlocks.push({
+                            x: bx * blockSize,
+                            y: by * blockSize,
+                            width: blockSize,
+                            height: blockSize,
+                            changedRatio: changedPixels / totalPixels
+                        });
+                    }
+                }
             }
 
-            // Capturar frame actual
-            motionCtx.drawImage(video, 0, 0);
-            const currentFrame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
-            const currentData = currentFrame.data;
+            // Paso 2: Agrupar bloques cercanos en blobs
+            const connectedBlobs = groupBlocksIntoBlobs(motionBlocks, blockSize);
 
-            if (previousFrame) {
-                const previousData = previousFrame.data;
-                let diffScore = 0;
-                const threshold = 30;
-                const motionRegions = [];
+            // Paso 3: Filtrar blobs pequeños (ruido) y validar blobs significativos
+            const significantBlobs = connectedBlobs.filter(blob => {
+                // Calcular área del blob
+                const blobArea = blob.width * blob.height;
+                
+                // Verificar si el blob es lo suficientemente grande
+                if (blobArea < minBlobArea) {
+                    return false;
+                }
 
-                // Comparar frames y encontrar regiones de movimiento
-                for (let y = 0; y < motionCanvas.height; y += 8) {
-                    for (let x = 0; x < motionCanvas.width; x += 8) {
-                        let regionDiff = 0;
-                        let pixelCount = 0;
+                // Calcular intensidad promedio de cambio dentro del blob
+                const avgChange = blob.blocks.reduce((sum, b) => sum + b.changedRatio, 0) / blob.blocks.length;
+                
+                // El blob debe tener cambios significativos en su interior
+                return avgChange > minPixelChangeInBlob;
+            });
 
-                        // Comparar cada pixel en el bloque 8x8
-                        for (let py = 0; py < 8 && y + py < motionCanvas.height; py++) {
-                            for (let px = 0; px < 8 && x + px < motionCanvas.width; px++) {
-                                const i = ((y + py) * motionCanvas.width + (x + px)) * 4;
-                                const r = Math.abs(currentData[i] - previousData[i]);
-                                const g = Math.abs(currentData[i + 1] - previousData[i + 1]);
-                                const b = Math.abs(currentData[i + 2] - previousData[i + 2]);
+            // Calcular porcentaje total de movimiento
+            const totalBlocks = widthBlocks * heightBlocks;
+            const motionPercent = (motionBlocks.length / totalBlocks) * 100;
 
-                                if (r + g + b > threshold) {
-                                    regionDiff++;
-                                }
-                                pixelCount++;
-                            }
-                        }
+            // Generar regiones para dibujar
+            const regions = significantBlobs.map(blob => ({
+                x: blob.x,
+                y: blob.y,
+                width: blob.width,
+                height: blob.height
+            }));
 
-                        // Si hay suficiente cambio en esta región, marcar como movimiento
-                        if (regionDiff > (pixelCount * 0.3)) {
-                            diffScore++;
-                            motionRegions.push({ x, y, width: 8, height: 8 });
+            return {
+                motionPercent: motionPercent,
+                blobs: significantBlobs,
+                regions: regions,
+                hasSignificantMotion: significantBlobs.length > 0 && motionPercent > 1
+            };
+        }
+
+        /**
+         * Agrupa bloques de movimiento cercanos en blobs
+         */
+        function groupBlocksIntoBlobs(blocks, blockSize) {
+            const visited = new Set();
+            const blobs = [];
+
+            for (let i = 0; i < blocks.length; i++) {
+                if (visited.has(i)) continue;
+
+                const startBlock = blocks[i];
+                const blobBlocks = [startBlock];
+                visited.add(i);
+
+                // BFS para encontrar bloques conectados
+                const queue = [startBlock];
+                
+                while (queue.length > 0) {
+                    const current = queue.shift();
+
+                    // Buscar bloques cercanos (conectividad 8-directional)
+                    for (let j = 0; j < blocks.length; j++) {
+                        if (visited.has(j)) continue;
+
+                        const other = blocks[j];
+                        
+                        // Calcular distancia entre bloques
+                        const dx = Math.abs(current.x - other.x);
+                        const dy = Math.abs(current.y - other.y);
+                        const maxDist = blockSize * 2; // Conectados si están a menos de 2 bloques
+
+                        if (dx < maxDist && dy < maxDist) {
+                            blobBlocks.push(other);
+                            visited.add(j);
+                            queue.push(other);
                         }
                     }
                 }
 
-                const motionPercent = (diffScore / ((motionCanvas.width / 8) * (motionCanvas.height / 8))) * 100;
-                document.getElementById('motionScore').textContent = Math.round(motionPercent) + '%';
+                // Calcular bounding box del blob
+                if (blobBlocks.length > 0) {
+                    const minX = Math.min(...blobBlocks.map(b => b.x));
+                    const minY = Math.min(...blobBlocks.map(b => b.y));
+                    const maxX = Math.max(...blobBlocks.map(b => b.x + b.width));
+                    const maxY = Math.max(...blobBlocks.map(b => b.y + b.height));
 
-                // Dibujar cuadros verdes donde hay movimiento
-                drawMotionBoxes(motionRegions);
-
-                // Enviar alertas de movimiento significativo
-                if (motionPercent > 2 && socket) {
-                    socket.emit('motionDetected', {
-                        score: motionPercent,
-                        regions: motionRegions
+                    blobs.push({
+                        x: minX,
+                        y: minY,
+                        width: maxX - minX,
+                        height: maxY - minY,
+                        blocks: blobBlocks
                     });
                 }
             }
 
-            // Guardar frame para próxima comparación
-            previousFrame = currentFrame;
-
-            requestAnimationFrame(detectMotion);
+            return blobs;
         }
 
-        function drawMotionBoxes(regions) {
+        function drawMotionBoxes(blobs) {
             // Limpiar canvas
             motionCtx.clearRect(0, 0, motionCanvas.width, motionCanvas.height);
 
-            if (regions.length === 0) return;
+            if (!blobs || blobs.length === 0) return;
 
-            // Dibujar cuadros verdes
-            motionCtx.strokeStyle = '#00ff00';
-            motionCtx.lineWidth = 3;
-            motionCtx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+            // Dibujar rectángulos alrededor de los blobs detectados
+            blobs.forEach(blob => {
+                motionCtx.strokeStyle = '#00ff00';
+                motionCtx.lineWidth = 3;
+                motionCtx.fillStyle = 'rgba(0, 255, 0, 0.15)';
 
-            regions.forEach(region => {
-                motionCtx.strokeRect(region.x, region.y, region.width * 2, region.height * 2);
-                motionCtx.fillRect(region.x, region.y, region.width * 2, region.height * 2);
+                motionCtx.strokeRect(blob.x, blob.y, blob.width, blob.height);
+                motionCtx.fillRect(blob.x, blob.y, blob.width, blob.height);
             });
         }
 
         // Función para que el espectador dibuje los cuadros de movimiento recibidos
-        function drawRemoteMotionBoxes(regions) {
-            if (!remoteMotionCanvas || !regions) return;
+        function drawRemoteMotionBoxes(blobs) {
+            if (!remoteMotionCanvas || !blobs) return;
 
             // Limpiar canvas
             remoteMotionCtx.clearRect(0, 0, remoteMotionCanvas.width, remoteMotionCanvas.height);
 
-            if (regions.length === 0) return;
+            if (blobs.length === 0) return;
 
-            // Dibujar cuadros verdes
+            // Dibujar rectángulos alrededor de los blobs
             remoteMotionCtx.strokeStyle = '#00ff00';
             remoteMotionCtx.lineWidth = 3;
-            remoteMotionCtx.fillStyle = 'rgba(0, 255, 0, 0.2)';
+            remoteMotionCtx.fillStyle = 'rgba(0, 255, 0, 0.15)';
 
-            regions.forEach(region => {
-                remoteMotionCtx.strokeRect(region.x, region.y, region.width * 2, region.height * 2);
-                remoteMotionCtx.fillRect(region.x, region.y, region.width * 2, region.height * 2);
+            blobs.forEach(blob => {
+                remoteMotionCtx.strokeRect(blob.x, blob.y, blob.width, blob.height);
+                remoteMotionCtx.fillRect(blob.x, blob.y, blob.width, blob.height);
             });
         }
 
@@ -1245,13 +1438,12 @@
 
                 socket.emit('toggleFlashlight', flashlightOn);
 
-                // Enviar estado completo al espectador
                 if (socket && currentRole === 'camera') {
                     socket.emit('cameraStatusResponse', {
                         flashlightEnabled: flashlightOn,
                         motionEnabled: motionDetectionEnabled,
                         quality: window.currentQuality || 'media',
-                        fps: window.currentFps || 15
+                        fps: window.currentFps || targetFps
                     });
                 }
 
@@ -1272,7 +1464,7 @@
 
         function startAutoFlashlight() {
             if (autoFlashlightEnabled) {
-                setInterval(checkBrightness, 2000); // Verificar cada 2 segundos
+                setInterval(checkBrightness, 2000);
             }
         }
 
@@ -1280,18 +1472,15 @@
             if (!localStream || !autoFlashlightEnabled) return;
 
             try {
-                // Capturar frame actual para analizar luminosidad
                 motionCtx.drawImage(document.getElementById('localVideo'), 0, 0);
                 const frame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
                 const data = frame.data;
 
-                // Calcular luminosidad promedio
                 let totalBrightness = 0;
-                for (let i = 0; i < data.length; i += 16) { // Muestrear cada 4 pixels
+                for (let i = 0; i < data.length; i += 16) {
                     const r = data[i];
                     const g = data[i + 1];
                     const b = data[i + 2];
-                    // Formula de luminosidad perceptual
                     const brightness = (0.299 * r + 0.587 * g + 0.114 * b);
                     totalBrightness += brightness;
                 }
@@ -1299,21 +1488,15 @@
                 const avgBrightness = totalBrightness / (data.length / 16);
                 const brightnessPercent = Math.round((avgBrightness / 255) * 100);
                 
-                // Actualizar indicador de luminosidad
                 document.getElementById('brightnessLevel').textContent = brightnessPercent + '%';
 
-                // Si está muy oscuro (< 25%) y la linterna está apagada, prenderla
                 if (brightnessPercent < 25 && !flashlightOn) {
-                    console.log('Muy oscuro (' + brightnessPercent + '%), prendiendo linterna...');
                     flashlightOn = true;
                     await localStream.getVideoTracks()[0].applyConstraints({
                         advanced: [{ torch: true }]
                     });
                     socket.emit('toggleFlashlight', true);
-                }
-                // Si está suficientemente claro (> 40%) y la linterna está encendida, apagarla
-                else if (brightnessPercent > 40 && flashlightOn) {
-                    console.log('Suficiente luz (' + brightnessPercent + '%), apagando linterna...');
+                } else if (brightnessPercent > 40 && flashlightOn) {
                     flashlightOn = false;
                     await localStream.getVideoTracks()[0].applyConstraints({
                         advanced: [{ torch: false }]
@@ -1327,114 +1510,21 @@
         }
 
         // ============================================
-        // SEÑALIZACIÓN WEBRTC
+        // MANEJO DE CONEXIÓN
         // ============================================
 
-        function createPeerConnection() {
-            peerConnection = new RTCPeerConnection(rtcConfig);
-
-            // Agregar stream local si existe
-            if (localStream) {
-                localStream.getTracks().forEach(track => {
-                    peerConnection.addTrack(track, localStream);
-                });
-            }
-
-            // Manejar stream remoto
-            peerConnection.ontrack = (event) => {
-                console.log('Stream remoto recibido:', event.streams[0]);
-                remoteStream = event.streams[0];
-                updateRemoteVideo();
-            };
-
-            // Manejar candidatos ICE
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit('webrtcIceCandidate', {
-                        targetSocketId: getPeerSocketId(),
-                        candidate: event.candidate
-                    });
-                }
-            };
-
-            // Manejar cambios de estado
-            peerConnection.onconnectionstatechange = () => {
-                const state = peerConnection.connectionState;
-                console.log('Estado de conexión WebRTC:', state);
-                socket.emit('connectionStateChange', state);
-            };
-
-            return peerConnection;
-        }
-
-        function getPeerSocketId() {
-            return window.peerSocketId;
-        }
-
-        async function handleConnectionInitiated(data) {
+        function handleConnectionInitiated(data) {
             console.log('Iniciando conexión con:', data.peerId, 'Rol:', data.role);
             window.peerSocketId = data.peerId;
 
-            createPeerConnection();
-
-            if (data.role === 'spectator') {
-                // El espectador crea la oferta
-                try {
-                    const offer = await peerConnection.createOffer();
-                    await peerConnection.setLocalDescription(offer);
-                    socket.emit('webrtcOffer', {
-                        targetSocketId: data.peerId,
-                        offer: offer
-                    });
-                } catch (error) {
-                    console.error('Error creando oferta:', error);
-                }
-            }
-        }
-
-        async function handleWebRTCOffer(data) {
-            console.log('Oferta recibida de:', data.fromSocketId);
-            window.peerSocketId = data.fromSocketId;
-
-            createPeerConnection();
-
-            try {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                const answer = await peerConnection.createAnswer();
-                await peerConnection.setLocalDescription(answer);
-                socket.emit('webrtcAnswer', {
-                    targetSocketId: data.fromSocketId,
-                    answer: answer
-                });
-            } catch (error) {
-                console.error('Error procesando oferta:', error);
-            }
-        }
-
-        async function handleWebRTCAnswer(data) {
-            console.log('Respuesta recibida');
-            try {
-                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } catch (error) {
-                console.error('Error procesando respuesta:', error);
-            }
-        }
-
-        async function handleICECandidate(data) {
-            try {
-                if (data.candidate) {
-                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-                }
-            } catch (error) {
-                console.error('Error agregando candidato ICE:', error);
+            if (currentRole === 'camera') {
+                document.getElementById('cameraStatus').textContent = 'Espectador conectado';
+                document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot connected';
             }
         }
 
         function handleConnectionStateChange(state) {
-            const statusEl = document.getElementById('connectionStatus');
-            if (statusEl) {
-                statusEl.textContent = state;
-            }
+            console.log('Estado de conexión:', state);
         }
 
         function handlePeerDisconnected(data) {
@@ -1443,40 +1533,21 @@
             if (currentRole === 'spectator') {
                 document.getElementById('spectatorStatus').textContent = 'Cámara desconectada';
                 document.getElementById('spectatorStatusDot').className = 'status-dot disconnected';
-                
-                // Reiniciar conexión
-                if (peerConnection) {
-                    peerConnection.close();
-                    peerConnection = null;
-                }
-                remoteStream = null;
-                remotePreviousFrame = null;
+                document.getElementById('remoteVideo').src = '';
 
-                // Buscar nueva cámara después de 3 segundos
                 setTimeout(() => {
                     document.getElementById('spectatorStatus').textContent = 'Buscando cámara...';
                     document.getElementById('spectatorStatusDot').className = 'status-dot connecting';
                     socket.emit('registerAsSpectator');
                 }, 3000);
+            } else if (currentRole === 'camera') {
+                document.getElementById('cameraStatus').textContent = 'Espectador desconectado';
+                document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot connecting';
             }
         }
 
         function handlePeerConnected(data) {
             console.log('Peer conectado');
-            
-            if (currentRole === 'camera') {
-                document.getElementById('cameraStatus').textContent = 'Espectador conectado';
-                document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot connected';
-            } else if (currentRole === 'spectator') {
-                document.getElementById('spectatorStatus').textContent = 'Conectado';
-                document.getElementById('spectatorStatusDot').className = 'status-dot connected';
-                // Mostrar video cuando se conecte
-                setTimeout(() => {
-                    if (remoteStream) {
-                        updateRemoteVideo();
-                    }
-                }, 1000);
-            }
         }
 
         // ============================================
@@ -1487,13 +1558,16 @@
             console.log('Cámara disponible:', data.cameraId);
             if (currentRole === 'spectator') {
                 document.getElementById('spectatorStatus').textContent = 'Cámara encontrada. Conectando...';
-                // Inicializar canvas para motion boxes
+                
                 setTimeout(() => {
-                    const videoElement = document.getElementById('remoteVideo');
-                    if (videoElement) {
-                        remoteMotionCanvas = document.getElementById('remoteMotionCanvas');
-                        if (remoteMotionCanvas) {
-                            remoteMotionCtx = remoteMotionCanvas.getContext('2d');
+                    remoteMotionCanvas = document.getElementById('remoteMotionCanvas');
+                    if (remoteMotionCanvas) {
+                        remoteMotionCtx = remoteMotionCanvas.getContext('2d');
+                        // Configurar tamaño del canvas
+                        const imgElement = document.getElementById('remoteVideo');
+                        if (imgElement.complete) {
+                            remoteMotionCanvas.width = imgElement.naturalWidth || 640;
+                            remoteMotionCanvas.height = imgElement.naturalHeight || 480;
                         }
                     }
                 }, 500);
@@ -1508,36 +1582,8 @@
             }
         }
 
-        function updateRemoteVideo() {
-            const videoElement = document.getElementById('remoteVideo');
-            if (videoElement && remoteStream) {
-                videoElement.srcObject = remoteStream;
-                
-                // Inicializar canvas para motion boxes del espectador
-                videoElement.onloadedmetadata = () => {
-                    remoteMotionCanvas = document.getElementById('remoteMotionCanvas');
-                    if (remoteMotionCanvas) {
-                        remoteMotionCtx = remoteMotionCanvas.getContext('2d');
-                        remoteMotionCanvas.width = videoElement.videoWidth;
-                        remoteMotionCanvas.height = videoElement.videoHeight;
-                    }
-                    remotePreviousFrame = null;
-                };
-            }
-
-            // Solicitar estado de la cámara
-            if (socket) {
-                socket.emit('spectatorRequestStatus');
-            }
-        }
-
         function disconnectFromCamera() {
-            if (peerConnection) {
-                peerConnection.close();
-                peerConnection = null;
-            }
-            remoteStream = null;
-            remotePreviousFrame = null;
+            document.getElementById('remoteVideo').src = '';
             document.getElementById('spectatorStatus').textContent = 'Buscando cámara...';
             document.getElementById('spectatorStatusDot').className = 'status-dot connecting';
             socket.emit('registerAsSpectator');
@@ -1548,32 +1594,29 @@
         // ============================================
 
         function handleMotionAlert(data) {
-            console.log('Alerta de movimiento:', data.timestamp, 'Regiones:', data.regions?.length);
+            console.log('Alerta de movimiento:', data.timestamp, 'Blobs:', data.blobs?.length);
             
-            // Dibujar cuadros verdes en el espectador si hay regiones
-            if (data.regions && currentRole === 'spectator') {
-                drawRemoteMotionBoxes(data.regions);
+            // Dibujar boxes en el espectador si hay blobs
+            if (data.blobs && currentRole === 'spectator') {
+                drawRemoteMotionBoxes(data.blobs);
             }
 
-            // Mostrar notificación (con manejo de errores para producción)
+            // Mostrar notificación
             if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
                 try {
-                    new Notification('¡Movimiento detectado!', {
+                    new Notification('Movimiento detectado', {
                         body: `Nivel: ${Math.round(data.score)}%`,
                     });
                 } catch (e) {
-                    console.log('Notificación no disponible en este contexto');
+                    console.log('Notificación no disponible');
                 }
             }
         }
 
         function handleFlashlightStatus(data) {
             console.log('Estado de linterna:', data.enabled);
-
-            // Actualizar estado
             cameraStatus.flashlightEnabled = data.enabled;
 
-            // Actualizar UI si estamos en modo espectador
             if (currentRole === 'spectator') {
                 const statusEl = document.getElementById('cameraFlashlightStatus');
                 const btnEl = document.getElementById('spectatorFlashlightBtn');
@@ -1591,7 +1634,6 @@
 
         function handleCameraMotionStatus(data) {
             console.log('Estado de detección de movimiento:', data.enabled);
-
             cameraStatus.motionEnabled = data.enabled;
 
             if (currentRole === 'spectator') {
@@ -1611,11 +1653,9 @@
 
         function handleCameraStatusUpdate(status) {
             console.log('Estado de cámara actualizado:', status);
-
             cameraStatus = { ...cameraStatus, ...status, connected: true };
 
             if (currentRole === 'spectator') {
-                // Linterna
                 const flashlightStatus = document.getElementById('cameraFlashlightStatus');
                 const flashlightBtn = document.getElementById('spectatorFlashlightBtn');
                 if (flashlightStatus) {
@@ -1626,7 +1666,6 @@
                     flashlightBtn.className = `command-btn ${status.flashlightEnabled ? 'flashlight-on' : 'flashlight-off'}`;
                 }
 
-                // Movimiento
                 const motionStatus = document.getElementById('cameraMotionStatus');
                 const motionBtn = document.getElementById('spectatorMotionBtn');
                 if (motionStatus) {
@@ -1637,14 +1676,12 @@
                     motionBtn.className = `command-btn ${status.motionEnabled ? 'motion-on' : 'motion-off'}`;
                 }
 
-                // Calidad
                 const qualityStatus = document.getElementById('cameraQualityStatus');
                 if (qualityStatus) {
                     const qualityNames = { 'baja': 'Baja', 'media': 'Media', 'alta': 'Alta' };
                     qualityStatus.textContent = qualityNames[status.quality] || 'Media';
                 }
 
-                // Actualizar botones de calidad
                 document.querySelectorAll('.quality-btn').forEach(btn => {
                     btn.classList.remove('active');
                     if (btn.textContent.toLowerCase() === (status.quality || 'media')) {
@@ -1652,7 +1689,6 @@
                     }
                 });
 
-                // FPS
                 const fpsStatus = document.getElementById('cameraFpsStatus');
                 const fpsSlider = document.getElementById('fpsSlider');
                 const fpsPreview = document.getElementById('fpsPreview');
@@ -1693,19 +1729,34 @@
                 quality: quality,
                 fps: cameraStatus.fps
             });
+            
+            // Actualizar calidad localmente si somos la cámara
+            if (currentRole === 'camera') {
+                applyQualitySettings(quality, cameraStatus.fps);
+            }
+            
             console.log('Comando: Calidad', quality, 'enviada');
         }
 
         function spectatorSetFps(fps) {
             if (!socket || currentRole !== 'spectator') return;
 
-            cameraStatus.fps = parseInt(fps);
+            const fpsValue = parseInt(fps);
+            cameraStatus.fps = fpsValue;
 
             socket.emit('spectatorSetQuality', {
                 quality: cameraStatus.quality,
-                fps: parseInt(fps)
+                fps: fpsValue
             });
-            console.log('Comando: FPS', fps, 'enviado');
+            
+            // Actualizar FPS localmente si somos la cámara
+            if (currentRole === 'camera') {
+                targetFps = fpsValue;
+                document.getElementById('fpsDisplay').textContent = fpsValue;
+                startFrameCapture(); // Reiniciar captura con nuevo FPS
+            }
+            
+            console.log('Comando: FPS', fpsValue, 'enviado');
         }
 
         // ============================================
@@ -1719,9 +1770,9 @@
             if (!videoTrack) return;
 
             const qualitySettings = {
-                'baja': { width: 640, height: 360 },
-                'media': { width: 1280, height: 720 },
-                'alta': { width: 1920, height: 1080 }
+                'baja': { width: 640, height: 360, compression: 0.3 },
+                'media': { width: 1280, height: 720, compression: 0.5 },
+                'alta': { width: 1920, height: 1080, compression: 0.7 }
             };
 
             const settings = qualitySettings[quality] || qualitySettings['media'];
@@ -1731,10 +1782,15 @@
                 height: { ideal: settings.height },
                 frameRate: { ideal: fps }
             }).then(() => {
-                console.log('Calidad aplicada:', quality, fps, 'FPS');
+                console.log('Calidad aplicada:', quality, fps, 'FPS, compresión:', settings.compression);
 
                 window.currentQuality = quality;
                 window.currentFps = fps;
+                frameQuality = settings.compression;
+                targetFps = fps;
+                
+                document.getElementById('fpsDisplay').textContent = fps;
+                startFrameCapture();
 
                 if (socket && currentRole === 'camera') {
                     socket.emit('cameraStatusResponse', {
