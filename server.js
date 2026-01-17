@@ -236,7 +236,7 @@ io.on('connection', (socket) => {
                 targetConn.socket.emit('motionAlert', {
                     timestamp: Date.now(),
                     score: data.score,
-                    imageData: data.imageData
+                    regions: data.regions
                 });
             }
         }
