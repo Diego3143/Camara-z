@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureStream - Vigilancia Remota</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 15px;
+        }
+
+        /* Login Screen */
+        #loginScreen {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: linear-gradient(145deg, #151520, #1a1a25);
+            border-radius: 24px;
+            padding: 40px 30px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 25px 80px rgba(0, 0, 0, 0.6);
+            border: 1px solid #2a2a3a;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            font-size: 2rem;
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .login-header p {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 14px 16px;
+            background: #1a1a25;
+            border: 2px solid #2a2a3a;
+            border-radius: 12px;
+            color: #fff;
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .role-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .role-btn {
+            padding: 15px;
+            background: #1a1a25;
+            border: 2px solid #2a2a3a;
+            border-radius: 12px;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .role-btn:hover {
+            border-color: #3a3a4a;
+        }
+
+        .role-btn.active {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+            color: #00ff88;
+        }
+
+        .role-btn svg {
+            width: 28px;
+            height: 28px;
+            margin-bottom: 8px;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            border: none;
+            border-radius: 12px;
+            color: #000;
+            font-size: 1.1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px rgba(0, 255, 136, 0.4);
+        }
+
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .info-text {
+            text-align: center;
+            margin-top: 20px;
+            color: #666;
+            font-size: 0.8rem;
+            line-height: 1.5;
+        }
+
+        /* Main Interface */
+        #mainScreen {
+            display: none;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 0;
+            margin-bottom: 15px;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            color: #00ff88;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #666;
+        }
+
+        .status-dot.connected {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Video Container */
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            margin-bottom: 15px;
+        }
+
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: none;
+        }
+
+        #localVideo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        #motionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.9);
+            transition: opacity 0.3s ease;
+        }
+
+        .video-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .connecting-text {
+            text-align: center;
+            color: #00ff88;
+        }
+
+        .connecting-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(0, 255, 136, 0.2);
+            border-top-color: #00ff88;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .connection-status {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            padding: 6px 12px;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .connection-status.motion {
+            background: rgba(255, 61, 0, 0.8);
+            color: #fff;
+        }
+
+        /* Info Cards */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .info-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 12px;
+            text-align: center;
+        }
+
+        .info-card-label {
+            font-size: 0.75rem;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .info-card-value {
+            font-size: 1.2rem;
+            font-weight: 700;
+        }
+
+        .info-card-value.motion {
+            color: #00ff88;
+        }
+
+        .info-card-value.brightness {
+            color: #ffd700;
+        }
+
+        .info-card-value.fps {
+            color: #00d4ff;
+        }
+
+        /* Controls */
+        .controls-section {
+            background: linear-gradient(145deg, #151520, #1a1a25);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            color: #60a5fa;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Flash Control */
+        .flash-control {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .flash-mode-btn {
+            flex: 1;
+            padding: 12px;
+            background: #1a1a25;
+            border: 2px solid #2a2a3a;
+            border-radius: 10px;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+
+        .flash-mode-btn:hover {
+            border-color: #3a3a4a;
+        }
+
+        .flash-mode-btn.active {
+            border-color: #ffd700;
+            background: rgba(255, 215, 0, 0.1);
+            color: #ffd700;
+        }
+
+        .flash-btn {
+            width: 100%;
+            padding: 16px;
+            background: #1a1a25;
+            border: 2px dashed #333;
+            border-radius: 12px;
+            color: #888;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .flash-btn:hover:not(:disabled) {
+            border-color: #ffd700;
+            color: #ffd700;
+        }
+
+        .flash-btn.on {
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            border-color: #ffd700;
+            color: #000;
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+        }
+
+        .flash-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .flash-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        /* Brightness Bar */
+        .brightness-container {
+            margin-top: 15px;
+        }
+
+        .brightness-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+            color: #888;
+        }
+
+        .brightness-bar {
+            height: 10px;
+            background: #1a1a25;
+            border-radius: 5px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .brightness-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #ff3d00, #ffd700, #00e676);
+            border-radius: 5px;
+            transition: width 0.2s ease;
+        }
+
+        .brightness-thresholds {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 4px;
+            font-size: 0.7rem;
+            color: #555;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .action-btn.primary {
+            background: linear-gradient(135deg, #00ff88, #00d4ff);
+            color: #000;
+        }
+
+        .action-btn.primary:hover {
+            box-shadow: 0 5px 20px rgba(0, 255, 136, 0.3);
+        }
+
+        .action-btn.danger {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: #fff;
+        }
+
+        .action-btn.secondary {
+            background: #1a1a25;
+            color: #e0e0e0;
+            border: 1px solid #333;
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Privacy Badge */
+        .privacy-badge {
+            text-align: center;
+            padding: 20px;
+            color: #555;
+            font-size: 0.8rem;
+        }
+
+        .privacy-badge svg {
+            width: 16px;
+            height: 16px;
+            vertical-align: middle;
+            margin-right: 5px;
+        }
+
+        /* Flashlight Overlay */
+        .flash-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 220, 0.25);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 1000;
+        }
+
+        .flash-overlay.active {
+            opacity: 1;
+        }
+
+        /* Responsive */
+        @media (max-width: 500px) {
+            .info-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            
+            .flash-control {
+                flex-direction: column;
+            }
+        }
+
+        /* Loading spinner for button */
+        .btn-spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-top-color: #000;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="flash-overlay" id="flashOverlay"></div>
+
+    <div class="container">
+        <!-- Login Screen -->
+        <div id="loginScreen">
+            <div class="login-card">
+                <div class="login-header">
+                    <h1>SecureStream</h1>
+                    <p>Sistema de Vigilancia Remota</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Contraseña de Seguridad</label>
+                    <input type="password" id="password" placeholder="Ingresa la contraseña" autocomplete="off">
+                </div>
+
+                <div class="form-group">
+                    <label>Tipo de Dispositivo</label>
+                    <div class="role-selector">
+                        <button class="role-btn active" id="cameraRole" data-role="camera">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                                <circle cx="12" cy="13" r="4"></circle>
+                            </svg>
+                            Cámara
+                        </button>
+                        <button class="role-btn" id="viewerRole" data-role="viewer">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                            Espectador
+                        </button>
+                    </div>
+                </div>
+
+                <button class="login-btn" id="loginBtn">
+                    <span id="loginBtnText">Conectar al Sistema</span>
+                </button>
+
+                <p class="info-text">
+                    <strong>Para Cámara:</strong> Deja el dispositivo en casa conectado a corriente.<br>
+                    <strong>Para Espectador:</strong> Accede desde cualquier lugar para ver el video en vivo.<br><br>
+                    Usa la misma contraseña en ambos dispositivos.
+                </p>
+            </div>
+        </div>
+
+        <!-- Main Interface -->
+        <div id="mainScreen">
+            <div class="header">
+                <h1>SecureStream</h1>
+                <div class="status-badge">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Desconectado</span>
+                </div>
+            </div>
+
+            <div class="video-container">
+                <video id="video" autoplay playsinline muted></video>
+                <video id="localVideo" autoplay playsinline muted style="display: none;"></video>
+                <canvas id="motionCanvas"></canvas>
+                
+                <div class="video-overlay" id="connectionOverlay">
+                    <div class="connecting-text">
+                        <div class="connecting-spinner"></div>
+                        <p id="connectionMessage">Conectando al servidor...</p>
+                    </div>
+                </div>
+
+                <div class="connection-status" id="motionAlert" style="display: none;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                    </svg>
+                    <span>Movimiento Detectado</span>
+                </div>
+            </div>
+
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-card-label">Movimiento</div>
+                    <div class="info-card-value motion" id="motionScore">0</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-label">Brillo</div>
+                    <div class="info-card-value brightness" id="brightnessLevel">0%</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-card-label">FPS</div>
+                    <div class="info-card-value fps" id="fpsCounter">0</div>
+                </div>
+            </div>
+
+            <div class="controls-section">
+                <div class="section-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    Control de Linterna
+                </div>
+
+                <div class="flash-control" id="flashModeSelector">
+                    <button class="flash-mode-btn active" id="autoFlashMode">
+                        Automático
+                    </button>
+                    <button class="flash-mode-btn" id="manualFlashMode">
+                        Manual
+                    </button>
+                </div>
+
+                <button class="flash-btn" id="flashToggleBtn" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
+                    <span id="flashBtnText">Linterna Apagada</span>
+                </button>
+
+                <div class="brightness-container">
+                    <div class="brightness-label">
+                        <span>Nivel de Luz Ambiental</span>
+                        <span id="brightnessPercent">0%</span>
+                    </div>
+                    <div class="brightness-bar">
+                        <div class="brightness-fill" id="brightnessFill"></div>
+                    </div>
+                    <div class="brightness-thresholds">
+                        <span>0%</span>
+                        <span>25% (ON)</span>
+                        <span>50% (OFF)</span>
+                        <span>100%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons" id="actionButtons">
+                <button class="action-btn primary" id="startBtn">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    Iniciar Transmisión
+                </button>
+                <button class="action-btn danger" id="disconnectBtn" style="display: none;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Desconectar
+                </button>
+            </div>
+
+            <div class="privacy-badge">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+                Sistema seguro - Procesamiento local - Sin almacenamiento en la nube
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        class SecureStream {
+            constructor() {
+                this.socket = null;
+                this.peerConnection = null;
+                this.localStream = null;
+                this.remoteStream = null;
+                this.motionCanvas = document.getElementById('motionCanvas');
+                this.motionCtx = this.motionCanvas.getContext('2d');
+                this.brightnessCanvas = document.createElement('canvas');
+                this.brightnessCtx = this.brightnessCanvas.getContext('2d');
+                
+                this.role = 'camera';
+                this.password = '';
+                this.roomId = null;
+                this.isConnected = false;
+                this.isStreaming = false;
+                
+                this.previousFrame = null;
+                this.frameCount = 0;
+                this.fps = 0;
+                this.lastFpsUpdate = performance.now();
+                
+                this.brightness = 0;
+                this.isFlashOn = false;
+                this.isAutoFlash = true;
+                this.torchSupported = false;
+                this.flashLocked = false;
+                this.flashTimeout = null;
+                
+                this.turnOnThreshold = 25;
+                this.turnOffThreshold = 50;
+                
+                this.sensitivity = 50;
+                this.minZoneSize = 100;
+                
+                this.initElements();
+                this.initEvents();
+            }
+
+            initElements() {
+                this.elements = {
+                    loginScreen: document.getElementById('loginScreen'),
+                    mainScreen: document.getElementById('mainScreen'),
+                    password: document.getElementById('password'),
+                    loginBtn: document.getElementById('loginBtn'),
+                    loginBtnText: document.getElementById('loginBtnText'),
+                    cameraRole: document.getElementById('cameraRole'),
+                    viewerRole: document.getElementById('viewerRole'),
+                    video: document.getElementById('video'),
+                    localVideo: document.getElementById('localVideo'),
+                    connectionOverlay: document.getElementById('connectionOverlay'),
+                    connectionMessage: document.getElementById('connectionMessage'),
+                    statusDot: document.getElementById('statusDot'),
+                    statusText: document.getElementById('statusText'),
+                    motionScore: document.getElementById('motionScore'),
+                    brightnessLevel: document.getElementById('brightnessLevel'),
+                    fpsCounter: document.getElementById('fpsCounter'),
+                    motionAlert: document.getElementById('motionAlert'),
+                    autoFlashMode: document.getElementById('autoFlashMode'),
+                    manualFlashMode: document.getElementById('manualFlashMode'),
+                    flashToggleBtn: document.getElementById('flashToggleBtn'),
+                    flashBtnText: document.getElementById('flashBtnText'),
+                    flashOverlay: document.getElementById('flashOverlay'),
+                    brightnessFill: document.getElementById('brightnessFill'),
+                    brightnessPercent: document.getElementById('brightnessPercent'),
+                    startBtn: document.getElementById('startBtn'),
+                    disconnectBtn: document.getElementById('disconnectBtn')
+                };
+            }
+
+            initEvents() {
+                // Role selection
+                this.elements.cameraRole.addEventListener('click', () => this.selectRole('camera'));
+                this.elements.viewerRole.addEventListener('click', () => this.selectRole('viewer'));
+                
+                // Login
+                this.elements.loginBtn.addEventListener('click', () => this.login());
+                this.elements.password.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.login();
+                });
+                
+                // Flash controls
+                this.elements.autoFlashMode.addEventListener('click', () => this.setFlashMode('auto'));
+                this.elements.manualFlashMode.addEventListener('click', () => this.setFlashMode('manual'));
+                this.elements.flashToggleBtn.addEventListener('click', () => this.toggleFlash());
+                
+                // Start/Stop
+                this.elements.startBtn.addEventListener('click', () => this.startStreaming());
+                this.elements.disconnectBtn.addEventListener('click', () => this.disconnect());
+            }
+
+            selectRole(role) {
+                this.role = role;
+                this.elements.cameraRole.classList.toggle('active', role === 'camera');
+                this.elements.viewerRole.classList.toggle('active', role === 'viewer');
+            }
+
+            async login() {
+                const password = this.elements.password.value.trim();
+                if (!password) {
+                    alert('Por favor ingresa una contraseña');
+                    return;
+                }
+
+                this.password = password;
+                this.elements.loginBtn.disabled = true;
+                this.elements.loginBtnText.innerHTML = '<div class="btn-spinner"></div> Conectando...';
+
+                try {
+                    // Connect to signaling server
+                    this.socket = io({
+                        transports: ['websocket', 'polling']
+                    });
+
+                    this.setupSocketEvents();
+                } catch (error) {
+                    console.error('Connection error:', error);
+                    this.elements.loginBtn.disabled = false;
+                    this.elements.loginBtnText.textContent = 'Conectar al Sistema';
+                    alert('Error al conectar. Verifica tu conexión a internet.');
+                }
+            }
+
+            setupSocketEvents() {
+                this.socket.on('connect', () => {
+                    console.log('Connected to server');
+                    this.socket.emit('join', {
+                        password: this.password,
+                        role: this.role
+                    });
+                });
+
+                this.socket.on('joined', (data) => {
+                    if (data.success) {
+                        this.roomId = data.roomId;
+                        this.isConnected = true;
+                        this.showMainInterface();
+                        this.updateConnectionStatus(true, 'Conectado');
+                        
+                        if (this.role === 'camera') {
+                            this.elements.connectionMessage.textContent = 'Listo para transmitir';
+                        } else {
+                            this.elements.connectionMessage.textContent = 'Esperando cámara...';
+                        }
+                    } else {
+                        alert('Error al conectarse: ' + (data.error || 'Contraseña incorrecta'));
+                        this.resetLogin();
+                    }
+                });
+
+                this.socket.on('camera_available', (data) => {
+                    if (this.role === 'viewer') {
+                        this.initWebRTC(data.cameraId);
+                    }
+                });
+
+                this.socket.on('camera_disconnected', () => {
+                    if (this.role === 'viewer') {
+                        this.updateConnectionStatus(false, 'Cámara desconectada');
+                        this.elements.connectionOverlay.classList.remove('hidden');
+                        this.elements.connectionMessage.textContent = 'La cámara se ha desconectado';
+                        this.cleanupWebRTC();
+                    }
+                });
+
+                this.socket.on('camera_telemetry', (data) => {
+                    if (this.role === 'viewer') {
+                        this.updateTelemetry(data.motionScore, data.brightness, data.fps);
+                    }
+                });
+
+                this.socket.on('flashlight_control', (data) => {
+                    if (this.role === 'camera') {
+                        this.setFlashState(data.state);
+                    }
+                });
+
+                this.socket.on('webrtc_offer', async (data) => {
+                    if (this.role === 'camera') {
+                        await this.handleOffer(data);
+                    }
+                });
+
+                this.socket.on('webrtc_answer', async (data) => {
+                    if (this.role === 'viewer') {
+                        await this.handleAnswer(data);
+                    }
+                });
+
+                this.socket.on('ice_candidate', async (data) => {
+                    if (this.peerConnection) {
+                        try {
+                            await this.peerConnection.addIceCandidate(data.candidate);
+                        } catch (e) {
+                            console.error('Error adding ICE candidate:', e);
+                        }
+                    }
+                });
+
+                this.socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                    this.updateConnectionStatus(false, 'Desconectado');
+                    this.cleanup();
+                });
+
+                this.socket.on('connect_error', (error) => {
+                    console.error('Connection error:', error);
+                    this.elements.loginBtn.disabled = false;
+                    this.elements.loginBtnText.textContent = 'Conectar al Sistema';
+                    alert('Error de conexión. Verifica tu internet.');
+                });
+            }
+
+            showMainInterface() {
+                this.elements.loginScreen.style.display = 'none';
+                this.elements.mainScreen.style.display = 'block';
+                
+                if (this.role === 'viewer') {
+                    this.elements.video.style.display = 'block';
+                    this.elements.localVideo.style.display = 'none';
+                    this.elements.flashModeSelector.style.display = 'none';
+                } else {
+                    this.elements.video.style.display = 'block';
+                    this.elements.localVideo.style.display = 'none';
+                    this.brightnessCanvas.width = 64;
+                    this.brightnessCanvas.height = 48;
+                }
+            }
+
+            async startStreaming() {
+                if (this.role === 'camera') {
+                    try {
+                        // Request camera access
+                        this.elements.connectionOverlay.classList.remove('hidden');
+                        this.elements.connectionMessage.textContent = 'Accediendo a cámara...';
+                        
+                        const constraints = {
+                            video: {
+                                width: { ideal: 640 },
+                                height: { ideal: 480 },
+                                facingMode: 'environment'
+                            },
+                            audio: false
+                        };
+                        
+                        this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+                        this.elements.video.srcObject = this.localStream;
+                        
+                        // Check torch capability
+                        const videoTrack = this.localStream.getVideoTracks()[0];
+                        try {
+                            const capabilities = videoTrack.getCapabilities();
+                            this.torchSupported = !!capabilities.torch;
+                        } catch (e) {
+                            this.torchSupported = false;
+                        }
+                        
+                        this.motionCanvas.width = this.elements.video.videoWidth || 640;
+                        this.motionCanvas.height = this.elements.video.videoHeight || 480;
+                        
+                        // Init WebRTC for streaming
+                        await this.initWebRTC(null);
+                        
+                        this.isStreaming = true;
+                        this.elements.startBtn.style.display = 'none';
+                        this.elements.disconnectBtn.style.display = 'flex';
+                        this.elements.flashToggleBtn.disabled = !this.torchSupported;
+                        
+                        this.updateConnectionStatus(true, 'Transmitiendo');
+                        this.elements.connectionOverlay.classList.add('hidden');
+                        
+                        // Start processing
+                        this.startMotionDetection();
+                        
+                    } catch (error) {
+                        console.error('Error accessing camera:', error);
+                        this.elements.connectionOverlay.classList.add('hidden');
+                        alert('Error al acceder a la cámara. Verifica los permisos.');
+                    }
+                }
+            }
+
+            async initWebRTC(targetSocketId) {
+                const config = {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                };
+
+                this.peerConnection = new RTCPeerConnection(config);
+
+                // Add local stream tracks (camera role)
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => {
+                        this.peerConnection.addTrack(track, this.localStream);
+                    });
+                }
+
+                // Handle remote stream (viewer role)
+                this.peerConnection.ontrack = (event) => {
+                    console.log('Remote track received');
+                    this.remoteStream = event.streams[0];
+                    this.elements.video.srcObject = this.remoteStream;
+                    this.elements.connectionOverlay.classList.add('hidden');
+                    this.updateConnectionStatus(true, 'Recibiendo Video');
+                };
+
+                // Handle ICE candidates
+                this.peerConnection.onicecandidate = (event) => {
+                    if (event.candidate && this.socket) {
+                        this.socket.emit('ice_candidate', {
+                            targetSocketId: targetSocketId || this.targetCameraId,
+                            candidate: event.candidate
+                        });
+                    }
+                };
+
+                // Create offer if we're the camera
+                if (this.role === 'camera') {
+                    const offer = await this.peerConnection.createOffer();
+                    await this.peerConnection.setLocalDescription(offer);
+                    
+                    this.socket.emit('webrtc_offer', {
+                        targetSocketId: targetSocketId,
+                        offer: offer
+                    });
+                }
+            }
+
+            async handleOffer(data) {
+                this.targetViewerId = data.fromSocketId;
+                
+                const offer = data.offer;
+                await this.peerConnection.setRemoteDescription(offer);
+                
+                const answer = await this.peerConnection.createAnswer();
+                await this.peerConnection.setLocalDescription(answer);
+                
+                this.socket.emit('webrtc_answer', {
+                    targetSocketId: data.fromSocketId,
+                    answer: answer
+                });
+            }
+
+            async handleAnswer(data) {
+                await this.peerConnection.setRemoteDescription(data.answer);
+            }
+
+            startMotionDetection() {
+                const processFrame = () => {
+                    if (!this.isStreaming) return;
+                    
+                    requestAnimationFrame(() => {
+                        setTimeout(processFrame, 100);
+                    });
+                    
+                    this.motionCtx.drawImage(this.elements.video, 0, 0);
+                    
+                    const imageData = this.motionCtx.getImageData(0, 0, this.motionCanvas.width, this.motionCanvas.height);
+                    
+                    // Analyze brightness
+                    this.analyzeBrightness(imageData);
+                    
+                    // Detect motion
+                    if (this.previousFrame) {
+                        const motionZones = this.detectMotion(this.previousFrame, imageData);
+                        this.drawMotionZones(motionZones);
+                        this.sendTelemetry(motionZones);
+                    }
+                    
+                    this.previousFrame = imageData;
+                    this.frameCount++;
+                    this.updateFps();
+                };
+                
+                processFrame();
+            }
+
+            analyzeBrightness(imageData) {
+                const data = imageData.data;
+                let totalBrightness = 0;
+                const pixelCount = data.length / 4;
+                
+                for (let i = 0; i < data.length; i += 4) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    totalBrightness += (r + g + b) / 3;
+                }
+                
+                this.brightness = Math.round((totalBrightness / pixelCount) / 255 * 100);
+                
+                // Update UI
+                this.elements.brightnessLevel.textContent = this.brightness + '%';
+                this.elements.brightnessPercent.textContent = this.brightness + '%';
+                this.elements.brightnessFill.style.width = this.brightness + '%';
+                
+                // Auto flashlight
+                if (this.isAutoFlash && this.torchSupported) {
+                    this.handleAutoFlash();
+                }
+            }
+
+            handleAutoFlash() {
+                if (this.flashLocked) return;
+                
+                if (this.brightness < this.turnOnThreshold && !this.isFlashOn) {
+                    this.setFlashState('on');
+                    this.lockFlash(2000);
+                } else if (this.brightness > this.turnOffThreshold && this.isFlashOn) {
+                    this.setFlashState('off');
+                    this.lockFlash(2000);
+                }
+            }
+
+            lockFlash(duration) {
+                this.flashLocked = true;
+                clearTimeout(this.flashTimeout);
+                this.flashTimeout = setTimeout(() => {
+                    this.flashLocked = false;
+                }, duration);
+            }
+
+            setFlashMode(mode) {
+                this.isAutoFlash = (mode === 'auto');
+                this.elements.autoFlashMode.classList.toggle('active', this.isAutoFlash);
+                this.elements.manualFlashMode.classList.toggle('active', !this.isAutoFlash);
+                
+                if (this.role === 'camera') {
+                    this.socket.emit('update_camera_settings', { autoFlashlight: this.isAutoFlash });
+                }
+            }
+
+            toggleFlash() {
+                if (!this.torchSupported) return;
+                
+                if (this.isFlashOn) {
+                    this.setFlashState('off');
+                    if (this.role === 'viewer') {
+                        this.socket.emit('toggle_flashlight', { state: 'off' });
+                    }
+                } else {
+                    this.setFlashState('on');
+                    if (this.role === 'viewer') {
+                        this.socket.emit('toggle_flashlight', { state: 'on' });
+                    }
+                }
+            }
+
+            async setFlashState(state) {
+                if (!this.torchSupported || !this.localStream) return;
+                
+                try {
+                    const videoTrack = this.localStream.getVideoTracks()[0];
+                    await videoTrack.applyConstraints({
+                        advanced: [{ torch: state === 'on' }]
+                    });
+                    
+                    this.isFlashOn = (state === 'on');
+                    this.updateFlashUI();
+                } catch (error) {
+                    console.error('Flash control error:', error);
+                }
+            }
+
+            updateFlashUI() {
+                if (this.isFlashOn) {
+                    this.elements.flashToggleBtn.classList.add('on');
+                    this.elements.flashBtnText.textContent = 'Linterna Encendida';
+                    this.elements.flashOverlay.classList.add('active');
+                } else {
+                    this.elements.flashToggleBtn.classList.remove('on');
+                    this.elements.flashBtnText.textContent = 'Linterna Apagada';
+                    this.elements.flashOverlay.classList.remove('active');
+                }
+            }
+
+            detectMotion(prevFrame, currentFrame) {
+                const zones = [];
+                const width = currentFrame.width;
+                const height = currentFrame.height;
+                const cellSize = 8;
+                const motionMap = [];
+                
+                for (let y = 0; y < height; y += cellSize) {
+                    for (let x = 0; x < width; x += cellSize) {
+                        let hasMotion = false;
+                        
+                        for (let dy = 0; dy < cellSize && y + dy < height; dy++) {
+                            for (let dx = 0; dx < cellSize && x + dx < width; dx++) {
+                                const i = ((y + dy) * width + (x + dx)) * 4;
+                                const prevBright = (prevFrame.data[i] + prevFrame.data[i + 1] + prevFrame.data[i + 2]) / 3;
+                                const currBright = (currentFrame.data[i] + currentFrame.data[i + 1] + currentFrame.data[i + 2]) / 3;
+                                
+                                if (Math.abs(prevBright - currBright) > this.sensitivity * 2.55) {
+                                    hasMotion = true;
+                                    break;
+                                }
+                            }
+                            if (hasMotion) break;
+                        }
+                        
+                        if (hasMotion) motionMap.push({ x, y });
+                    }
+                }
+                
+                const visited = new Set();
+                const clusterThreshold = 3;
+                
+                for (const cell of motionMap) {
+                    const key = `${cell.x},${cell.y}`;
+                    if (visited.has(key)) continue;
+                    
+                    const cluster = [];
+                    const queue = [{ x: cell.x, y: cell.y }];
+                    visited.add(key);
+                    
+                    while (queue.length > 0) {
+                        const { x, y } = queue.shift();
+                        cluster.push({ x, y });
+                        
+                        for (const neighbor of motionMap) {
+                            const nKey = `${neighbor.x},${neighbor.y}`;
+                            if (visited.has(nKey)) continue;
+                            
+                            const dx = Math.abs(neighbor.x - x);
+                            const dy = Math.abs(neighbor.y - y);
+                            
+                            if (dx <= cellSize * clusterThreshold && dy <= cellSize * clusterThreshold) {
+                                visited.add(nKey);
+                                queue.push(neighbor);
+                            }
+                        }
+                    }
+                    
+                    if (cluster.length * cellSize * cellSize >= this.minZoneSize) {
+                        let minX = width, minY = height, maxX = 0, maxY = 0;
+                        
+                        for (const cell of cluster) {
+                            minX = Math.min(minX, cell.x);
+                            minY = Math.min(minY, cell.y);
+                            maxX = Math.max(maxX, cell.x + cellSize);
+                            maxY = Math.max(maxY, cell.y + cellSize);
+                        }
+                        
+                        zones.push({ x: minX, y: minY, width: maxX - minX, height: maxY - minY });
+                    }
+                }
+                
+                return zones;
+            }
+
+            drawMotionZones(zones) {
+                this.motionCtx.strokeStyle = '#00ff88';
+                this.motionCtx.lineWidth = 3;
+                this.motionCtx.shadowColor = '#00ff88';
+                this.motionCtx.shadowBlur = 10;
+                
+                let hasMotion = false;
+                
+                for (const zone of zones) {
+                    const score = (zone.width * zone.height) / this.minZoneSize;
+                    
+                    if (score > 0.3) {
+                        hasMotion = true;
+                        this.motionCtx.strokeRect(zone.x, zone.y, zone.width, zone.height);
+                        this.motionCtx.fillStyle = 'rgba(0, 255, 136, 0.15)';
+                        this.motionCtx.fillRect(zone.x, zone.y, zone.width, zone.height);
+                    }
+                }
+                
+                this.motionCtx.shadowBlur = 0;
+                
+                // Show motion alert
+                this.elements.motionAlert.style.display = hasMotion ? 'flex' : 'none';
+                this.elements.motionAlert.classList.toggle('motion', hasMotion);
+            }
+
+            sendTelemetry(motionZones) {
+                const motionScore = motionZones.reduce((sum, z) => sum + z.width * z.height, 0);
+                
+                this.elements.motionScore.textContent = motionScore.toLocaleString();
+                
+                if (this.socket) {
+                    this.socket.emit('telemetry', {
+                        motionScore: motionScore,
+                        brightness: this.brightness,
+                        fps: this.fps
+                    });
+                }
+            }
+
+            updateTelemetry(motionScore, brightness, fps) {
+                this.elements.motionScore.textContent = motionScore.toLocaleString();
+                this.elements.brightnessLevel.textContent = brightness + '%';
+                this.elements.fpsCounter.textContent = fps;
+            }
+
+            updateFps() {
+                this.frameCount++;
+                const now = performance.now();
+                
+                if (now - this.lastFpsUpdate >= 1000) {
+                    this.fps = this.frameCount;
+                    this.frameCount = 0;
+                    this.lastFpsUpdate = now;
+                    this.elements.fpsCounter.textContent = this.fps;
+                }
+            }
+
+            updateConnectionStatus(connected, text) {
+                this.elements.statusDot.classList.toggle('connected', connected);
+                this.elements.statusText.textContent = text;
+            }
+
+            disconnect() {
+                this.cleanup();
+                this.resetLogin();
+            }
+
+            cleanup() {
+                this.isStreaming = false;
+                this.isConnected = false;
+                
+                if (this.localStream) {
+                    this.localStream.getTracks().forEach(track => track.stop());
+                    this.localStream = null;
+                }
+                
+                this.cleanupWebRTC();
+                
+                if (this.socket) {
+                    this.socket.disconnect();
+                    this.socket = null;
+                }
+            }
+
+            cleanupWebRTC() {
+                if (this.peerConnection) {
+                    this.peerConnection.close();
+                    this.peerConnection = null;
+                }
+                this.remoteStream = null;
+            }
+
+            resetLogin() {
+                this.elements.loginScreen.style.display = 'flex';
+                this.elements.mainScreen.style.display = 'none';
+                this.elements.loginBtn.disabled = false;
+                this.elements.loginBtnText.textContent = 'Conectar al Sistema';
+                this.elements.password.value = '';
+                this.elements.startBtn.style.display = 'flex';
+                this.elements.disconnectBtn.style.display = 'none';
+                this.elements.motionAlert.style.display = 'none';
+                this.motionCtx.clearRect(0, 0, this.motionCanvas.width, this.motionCanvas.height);
+                this.updateConnectionStatus(false, 'Desconectado');
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            window.secureStream = new SecureStream();
+        });
+    </script>
+</body>
+</html>
