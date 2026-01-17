@@ -1529,11 +1529,15 @@
                 drawRemoteMotionBoxes(data.regions);
             }
 
-            // Mostrar notificación
-            if (Notification.permission === 'granted') {
-                new Notification('¡Movimiento detectado!', {
-                    body: `Nivel: ${Math.round(data.score)}%`,
-                });
+            // Mostrar notificación (con manejo de errores para producción)
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                try {
+                    new Notification('¡Movimiento detectado!', {
+                        body: `Nivel: ${Math.round(data.score)}%`,
+                    });
+                } catch (e) {
+                    console.log('Notificación no disponible en este contexto');
+                }
             }
         }
 
