@@ -34,11 +34,69 @@ app.use(express.static(path.join(__dirname, 'public')));
 const connections = new Map();
 
 /**
+ * SecureStream - Servidor de Vigilancia Remota
+ * Sistema de vigilancia con envío de imágenes en tiempo real
+ * 
+ * Características:
+ * - Transmisión de frames JPEG vía Socket.io
+ * - Detección de movimiento inteligente
+ * - Autenticación con contraseña
+ * - Gestión de sesiones cámara-espectador
+ */
+
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+
+// Configuración del servidor
+const PORT = process.env.PORT || 3000;
+const APP_PASSWORD = process.env.APP_PASSWORD || 'secure123';
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST']
+    }
+});
+
+// Middleware para servir archivos estáticos
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Almacenamiento de estado de conexiones
+const connections = new Map();
+
+// ============================================
+// FUNCIONES DE UTILIDAD Y DEBUG
+// ============================================
+
+function logEvent(category, message, socketId = null) {
+    const id = socketId || 'SERVER';
+    const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+    console.log(`[${timestamp}] [${category}] ${id}: ${message}`);
+}
+
+function getConnectionInfo(socketId) {
+    const conn = connections.get(socketId);
+    if (!conn) return null;
+    return {
+        role: conn.role,
+        status: conn.status,
+        connectedTo: conn.connectedTo
+    };
+}
+
+/**
  * Busca una cámara disponible para conectar
+ * Las cámaras en status 'ready' o 'streaming' están disponibles
  */
 function findAvailableCamera() {
     for (const [socketId, data] of connections.entries()) {
-        if (data.role === 'camera' && data.status === 'ready' && !data.connectedTo) {
+        if (data.role === 'camera' && 
+            (data.status === 'ready' || data.status === 'streaming') && 
+            !data.connectedTo) {
             return socketId;
         }
     }
@@ -58,15 +116,125 @@ function findWaitingSpectator() {
 }
 
 /**
+ * Busca cualquier espectador que pueda recibir stream
+ * Incluye espectadores buscando O espectadores esperando reconexión
+ */
+function findAnySpectator() {
+    for (const [socketId, data] of connections.entries()) {
+        if (data.role === 'spectator' && !data.connectedTo) {
+            return socketId;
+        }
+    }
+    return null;
+}
+
+/**
+ * Conecta una cámara a un espectador con manejo robusto
+ */
+function connectCameraToSpectator(cameraSocketId, spectatorSocketId) {
+    const cameraConn = connections.get(cameraSocketId);
+    const spectatorConn = connections.get(spectatorSocketId);
+
+    // Validar que ambas conexiones existen
+    if (!cameraConn) {
+        logEvent('ERR', `Cámara no encontrada: ${cameraSocketId}`);
+        return false;
+    }
+    if (!spectatorConn) {
+        logEvent('ERR', `Espectador no encontrado: ${spectatorSocketId}`);
+        return false;
+    }
+
+    // Verificar que la cámara no esté ya conectada
+    if (cameraConn.connectedTo) {
+        logEvent('WARN', `Cámara ${cameraSocketId} ya conectada a ${cameraConn.connectedTo}`);
+        return false;
+    }
+
+    logEvent('MATCH', `Conectando CÁMARA ${cameraSocketId} <-> ESPECTADOR ${spectatorSocketId}`);
+
+    // Actualizar estados y referencias DE AMBOS lados
+    cameraConn.connectedTo = spectatorSocketId;
+    cameraConn.status = 'streaming';
+    
+    spectatorConn.connectedTo = cameraSocketId;
+    spectatorConn.status = 'streaming';
+
+    // Notificar a la cámara
+    cameraConn.socket.emit('connectionInitiated', {
+        peerId: spectatorSocketId,
+        role: 'camera'
+    });
+
+    // Notificar al espectador
+    spectatorConn.socket.emit('connectionInitiated', {
+        peerId: cameraSocketId,
+        role: 'spectator'
+    });
+
+    logEvent('INFO', `Conexión establecida: ${cameraSocketId} (${cameraConn.status}) <-> ${spectatorSocketId} (${spectatorConn.status})`);
+    
+    return true;
+}
+
+/**
+ * Intenta conectar espectador con retry si no hay cámara lista inmediatamente
+ */
+function attemptSpectatorConnection(spectatorSocketId) {
+    let attempts = 0;
+    const maxAttempts = 3;
+    const retryDelay = 500; // 500ms entre reintentos
+
+    const tryConnect = () => {
+        attempts++;
+        
+        // Buscar cámara disponible
+        let cameraSocketId = findAvailableCamera();
+        
+        // Si no hay cámara, buscar espectadores pendientes que podrían reconectarse
+        if (!cameraSocketId) {
+            logEvent('WARN', `Intento ${attempts}/${maxAttempts}: Sin cámara disponible, reintentando...`);
+            
+            if (attempts < maxAttempts) {
+                setTimeout(tryConnect, retryDelay);
+                return;
+            } else {
+                // Max reintentos alcanzado
+                const spectatorConn = connections.get(spectatorSocketId);
+                if (spectatorConn) {
+                    spectatorConn.status = 'searching';
+                    spectatorConn.socket.emit('noCameraAvailable', { 
+                        message: 'No hay cámaras disponibles. Espera a que una cámara se conecte.' 
+                    });
+                    logEvent('INFO', 'No hay cámaras disponibles después de reintentos');
+                }
+                return;
+            }
+        }
+
+        // Intentar conectar
+        const success = connectCameraToSpectator(cameraSocketId, spectatorSocketId);
+        
+        if (!success && attempts < maxAttempts) {
+            // La conexión falló pero podemos reintentar
+            setTimeout(tryConnect, retryDelay);
+        }
+    };
+
+    // Iniciar proceso de conexión
+    tryConnect();
+}
+
+/**
  * Manejador de conexiones Socket.io
  */
 io.on('connection', (socket) => {
-    console.log(`[${new Date().toISOString()}] Cliente conectado: ${socket.id}`);
+    logEvent('CONN', `Cliente conectado`);
     
     // Inicializar estado del socket
     connections.set(socket.id, {
         role: null,
-        status: 'disconnected',
+        status: 'connected',
         connectedTo: null,
         socket: socket
     });
@@ -76,7 +244,7 @@ io.on('connection', (socket) => {
      */
     socket.on('authenticate', (password) => {
         const isValid = password === APP_PASSWORD;
-        console.log(`[AUTH] Cliente ${socket.id}: ${isValid ? 'AUTORIZADO' : 'FALLIDO'}`);
+        logEvent('AUTH', isValid ? 'AUTORIZADO' : 'FALLIDO');
         socket.emit('authResult', { success: isValid });
     });
 
@@ -88,48 +256,55 @@ io.on('connection', (socket) => {
         if (!conn) return;
 
         conn.role = 'camera';
-        conn.status = 'registered';
+        conn.status = 'initializing';
         
-        console.log(`[CAM] Cámara registrada: ${socket.id}`);
+        logEvent('CAM', `Nueva cámara registrada: ${socket.id}`);
         socket.emit('cameraRegistered', { 
-            message: 'Cámara registrada exitosamente'
+            message: 'Cámara registrada exitosamente' 
         });
 
         // Buscar si hay espectadores esperando
-        const spectatorSocketId = findWaitingSpectator();
+        const spectatorSocketId = findAnySpectator();
         if (spectatorSocketId) {
-            console.log(`[CAM] Espectador esperando encontrado, conectando...`);
+            logEvent('CAM', `Espectador ${spectatorSocketId} esperando, conectando...`);
             connectCameraToSpectator(socket.id, spectatorSocketId);
         } else {
-            console.log(`[CAM] No hay espectadores esperando, esperando...`);
-            // Notificar a todos los espectadores que hay una nueva cámara
-            broadcastToRole('spectator', 'cameraAvailable', { 
-                cameraId: socket.id 
-            });
+            logEvent('CAM', `Sin espectadores esperando, esperando conexión...`);
         }
     });
 
     /**
-     * Evento: Cámara lista para transmitir
+     * Evento: Cámara lista para transmitir (video inicializado)
      */
     socket.on('cameraReady', () => {
         const conn = connections.get(socket.id);
         if (!conn || conn.role !== 'camera') return;
 
         conn.status = 'ready';
-        console.log(`[CAM] Cámara ${socket.id} LISTA PARA TRANSMITIR`);
-
-        // Buscar espectadores esperando
-        const spectatorSocketId = findWaitingSpectator();
-        if (spectatorSocketId) {
-            console.log(`[CAM] Espectador esperando, conectando...`);
-            connectCameraToSpectator(socket.id, spectatorSocketId);
+        logEvent('CAM', `CÁMARA ${socket.id} LISTA PARA TRANSMITIR`);
+        
+        // Verificar si ya tiene un espectador conectado (caso de reconnect)
+        if (conn.connectedTo) {
+            const spectatorConn = connections.get(conn.connectedTo);
+            if (spectatorConn && spectatorConn.socket) {
+                // Notificar al espectador que la cámara está lista
+                spectatorConn.socket.emit('peerReady', { 
+                    message: 'Cámara lista para transmitir' 
+                });
+            }
         } else {
-            // Notificar a todos los espectadores
-            console.log(`[CAM] Notificando a espectadores...`);
-            broadcastToRole('spectator', 'cameraAvailable', { 
-                cameraId: socket.id 
-            });
+            // Buscar espectadores esperando
+            const spectatorSocketId = findAnySpectator();
+            if (spectatorSocketId) {
+                logEvent('CAM', `Conectando con espectador ${spectatorSocketId}...`);
+                connectCameraToSpectator(socket.id, spectatorSocketId);
+            } else {
+                logEvent('CAM', `Esperando espectadores...`);
+                // Notificar a todos los espectadores que hay una nueva cámara
+                broadcastToRole('spectator', 'cameraAvailable', { 
+                    cameraId: socket.id 
+                });
+            }
         }
     });
 
@@ -143,20 +318,10 @@ io.on('connection', (socket) => {
         conn.role = 'spectator';
         conn.status = 'searching';
         
-        console.log(`[VIEW] Espectador ${socket.id} buscando cámara...`);
+        logEvent('VIEW', `Nuevo espectador: ${socket.id}`);
 
-        // Buscar cámara disponible
-        const cameraSocketId = findAvailableCamera();
-        
-        if (cameraSocketId) {
-            console.log(`[VIEW] Cámara encontrada ${cameraSocketId}, conectando...`);
-            connectCameraToSpectator(cameraSocketId, socket.id);
-        } else {
-            console.log(`[VIEW] No hay cámaras disponibles`);
-            socket.emit('noCameraAvailable', { 
-                message: 'No hay cámaras disponibles' 
-            });
-        }
+        // Intentar conectar con retry
+        attemptSpectatorConnection(socket.id);
     });
 
     /**
@@ -165,7 +330,16 @@ io.on('connection', (socket) => {
      */
     socket.on('stream_frame', (data) => {
         const conn = connections.get(socket.id);
-        if (!conn || conn.role !== 'camera') return;
+        if (!conn || conn.role !== 'camera') {
+            logEvent('WARN', `Frame recibido de socket no autorizado: ${socket.id}`);
+            return;
+        }
+
+        // Si la cámara aún no está en modo streaming, actualizamos
+        if (conn.status !== 'streaming') {
+            conn.status = 'streaming';
+            logEvent('STREAM', `Cámara ${socket.id} comenzando transmisión`);
+        }
 
         // Reenviar frame al espectador conectado
         if (conn.connectedTo) {
@@ -175,8 +349,11 @@ io.on('connection', (socket) => {
                 targetConn.socket.volatile.emit('video_frame', {
                     image: data.image,
                     timestamp: data.timestamp,
-                    frameNumber: data.frameNumber
+                    frameNumber: data.frameNumber,
+                    isDemo: data.isDemo || false
                 });
+            } else {
+                logEvent('WARN', `Espectador ${conn.connectedTo} no encontrado para frames`);
             }
         }
     });
@@ -290,97 +467,69 @@ io.on('connection', (socket) => {
      * Evento: Desconexión
      */
     socket.on('disconnect', () => {
-        console.log(`[${new Date().toISOString()}] Cliente desconectado: ${socket.id}`);
-        
         const conn = connections.get(socket.id);
+        
         if (conn) {
-            handlePeerDisconnection(socket.id);
+            logEvent('DISC', `Desconectado. Rol: ${conn.role || 'none'}, Estado: ${conn.status}, Conectado a: ${conn.connectedTo || 'none'}`);
+            
+            // Solo procesar desconexión si el peer estaba activamente conectado
+            if (conn.connectedTo) {
+                handlePeerDisconnection(socket.id);
+            } else {
+                logEvent('DISC', `Socket sin conexión activa, ignorando`);
+            }
+            
             connections.delete(socket.id);
+        } else {
+            logEvent('DISC', `Socket no encontrado en registro`);
         }
     });
 });
 
 /**
- * Conecta una cámara a un espectador
- */
-function connectCameraToSpectator(cameraSocketId, spectatorSocketId) {
-    const cameraConn = connections.get(cameraSocketId);
-    const spectatorConn = connections.get(spectatorSocketId);
-
-    if (!cameraConn || !spectatorConn) {
-        console.log(`[CONNECT] ERROR: No se pudo encontrar cámara=${!!cameraConn} espectador=${!!spectatorConn}`);
-        return;
-    }
-
-    // Actualizar estados
-    cameraConn.status = 'connecting';
-    cameraConn.connectedTo = spectatorSocketId;
-    spectatorConn.status = 'connecting';
-    spectatorConn.connectedTo = cameraSocketId;
-
-    console.log(`[CONNECT] 🔗 Cámara ${cameraSocketId} <-> Espectador ${spectatorSocketId}`);
-
-    // Notificar a ambos peers
-    cameraConn.socket.emit('connectionInitiated', {
-        peerId: spectatorSocketId,
-        role: 'camera'
-    });
-
-    spectatorConn.socket.emit('connectionInitiated', {
-        peerId: cameraSocketId,
-        role: 'spectator'
-    });
-}
-
-/**
- * Maneja la desconexión de un peer
+ * Maneja la desconexión de un peer activamente conectado
  */
 function handlePeerDisconnection(socketId) {
     const conn = connections.get(socketId);
-    if (!conn) return;
+    if (!conn || !conn.connectedTo) return;
 
-    if (conn.connectedTo) {
-        const peerConn = connections.get(conn.connectedTo);
-        if (peerConn && peerConn.socket) {
-            peerConn.socket.emit('peerDisconnected', { reason: 'Peer desconectado' });
+    const peerId = conn.connectedTo;
+    logEvent('DISC', `Procesando desconexión: ${socketId} -> ${peerId}`);
+
+    // Notificar al peer conectado
+    const peerConn = connections.get(peerId);
+    if (peerConn && peerConn.socket) {
+        peerConn.socket.emit('peerDisconnected', { 
+            reason: 'Peer desconectado',
+            wasCamera: conn.role === 'camera'
+        });
+        
+        // Resetear estado del peer
+        if (peerConn.role === 'spectator') {
             peerConn.status = 'searching';
             peerConn.connectedTo = null;
-        }
-    }
-
-    // Si era una cámara, buscar nueva cámara para el espectador
-    if (conn.role === 'camera') {
-        const newCameraId = findAvailableCamera();
-        if (newCameraId) {
-            const spectatorConn = connections.get(conn.connectedTo);
-            if (spectatorConn) {
-                connectCameraToSpectator(newCameraId, spectatorConn.socket.id);
+            logEvent('DISC', `Espectador ${peerId} liberado, buscando nueva cámara...`);
+            
+            // Buscar nueva cámara automáticamente
+            const newCameraId = findAvailableCamera();
+            if (newCameraId) {
+                logEvent('MATCH', `Reconectando espectador ${peerId} a cámara ${newCameraId}`);
+                connectCameraToSpectator(newCameraId, peerId);
+            } else {
+                // Notificar que no hay cámaras disponibles
+                peerConn.socket.emit('noCameraAvailable', { 
+                    message: 'Cámara desconectada. Esperando nuevas cámaras...' 
+                });
             }
-        } else {
-            broadcastToRole('spectator', 'noCameraAvailable', {
-                message: 'Cámara desconectada'
-            });
+        } else if (peerConn.role === 'camera') {
+            peerConn.status = 'ready';
+            peerConn.connectedTo = null;
+            logEvent('DISC', `Cámara ${peerId} liberada, disponible para nueva conexión`);
         }
     }
 
+    // Limpiar referencia del socket desconectado
     conn.connectedTo = null;
-}
-
-/**
- * Maneja cuando peers se conectan exitosamente
- */
-function handlePeerConnected(socketId) {
-    const conn = connections.get(socketId);
-    if (!conn) return;
-
-    console.log(`[CONNECT] ✅ Conexión establecida: ${socketId} <-> ${conn.connectedTo}`);
-    
-    if (conn.connectedTo) {
-        const peerConn = connections.get(conn.connectedTo);
-        if (peerConn && peerConn.socket) {
-            peerConn.socket.emit('peerConnected', { message: 'Conexión establecida' });
-        }
-    }
 }
 
 /**
@@ -394,7 +543,7 @@ function broadcastToRole(role, event, data) {
             count++;
         }
     }
-    console.log(`[BROADCAST] ${event} -> ${count} ${role}(s)`);
+    logEvent('BCAST', `${event} -> ${count} ${role}(s)`);
 }
 
 // Endpoints
