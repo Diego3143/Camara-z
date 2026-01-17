@@ -1,18 +1,17 @@
 /**
  * SecureStream - Servidor de Vigilancia Remota
- * Sistema de videovigilancia con WebRTC y Socket.io
+ * Sistema de vigilancia con envío de imágenes en tiempo real
  * 
  * Características:
- * - Señalización robusta para conexiones WebRTC peer-to-peer
- * - Gestión de habitaciones para múltiples sesiones cámara-espectador
- * - Detección de movimiento y control de linterna
+ * - Transmisión de frames JPEG vía Socket.io
+ * - Detección de movimiento inteligente
  * - Autenticación con contraseña
+ * - Gestión de sesiones cámara-espectador
  */
 
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 // Configuración del servidor
@@ -111,7 +110,7 @@ io.on('connection', (socket) => {
     });
 
     /**
-     * Evento: Cámara lista para transmitir (video inicializado)
+     * Evento: Cámara lista para transmitir
      */
     socket.on('cameraReady', () => {
         const conn = connections.get(socket.id);
@@ -161,77 +160,24 @@ io.on('connection', (socket) => {
     });
 
     /**
-     * Evento: Oferta WebRTC
+     * Evento: Frame de video recibido de la cámara
+     * Reenvía inmediatamente al espectador conectado
      */
-    socket.on('webrtcOffer', (data) => {
+    socket.on('stream_frame', (data) => {
         const conn = connections.get(socket.id);
-        if (!conn) return;
+        if (!conn || conn.role !== 'camera') return;
 
-        const { targetSocketId, offer } = data;
-        const targetConn = connections.get(targetSocketId);
-
-        if (targetConn && targetConn.socket) {
-            console.log(`[WEBRTC] Oferta de ${socket.id} -> ${targetSocketId}`);
-            targetConn.socket.emit('webrtcOffer', {
-                fromSocketId: socket.id,
-                offer: offer
-            });
-        } else {
-            console.log(`[WEBRTC] ERROR: Target ${targetSocketId} no encontrado`);
-        }
-    });
-
-    /**
-     * Evento: Respuesta WebRTC
-     */
-    socket.on('webrtcAnswer', (data) => {
-        const conn = connections.get(socket.id);
-        if (!conn) return;
-
-        const { targetSocketId, answer } = data;
-        const targetConn = connections.get(targetSocketId);
-
-        if (targetConn && targetConn.socket) {
-            console.log(`[WEBRTC] Respuesta de ${socket.id} -> ${targetSocketId}`);
-            targetConn.socket.emit('webrtcAnswer', {
-                fromSocketId: socket.id,
-                answer: answer
-            });
-        }
-    });
-
-    /**
-     * Evento: Candidatos ICE
-     */
-    socket.on('webrtcIceCandidate', (data) => {
-        const conn = connections.get(socket.id);
-        if (!conn) return;
-
-        const { targetSocketId, candidate } = data;
-        const targetConn = connections.get(targetSocketId);
-
-        if (targetConn && targetConn.socket) {
-            targetConn.socket.emit('webrtcIceCandidate', {
-                fromSocketId: socket.id,
-                candidate: candidate
-            });
-        }
-    });
-
-    /**
-     * Evento: Cambio de estado de conexión WebRTC
-     */
-    socket.on('connectionStateChange', (state) => {
-        const conn = connections.get(socket.id);
-        if (!conn) return;
-
-        conn.status = state;
-        console.log(`[STATE] ${socket.id} estado: ${state}`);
-
-        if (state === 'disconnected' || state === 'failed') {
-            handlePeerDisconnection(socket.id);
-        } else if (state === 'connected') {
-            handlePeerConnected(socket.id);
+        // Reenviar frame al espectador conectado
+        if (conn.connectedTo) {
+            const targetConn = connections.get(conn.connectedTo);
+            if (targetConn && targetConn.socket) {
+                // Usar volatile para no acumular frames si hay latencia
+                targetConn.socket.volatile.emit('video_frame', {
+                    image: data.image,
+                    timestamp: data.timestamp,
+                    frameNumber: data.frameNumber
+                });
+            }
         }
     });
 
@@ -248,7 +194,8 @@ io.on('connection', (socket) => {
                 targetConn.socket.emit('motionAlert', {
                     timestamp: Date.now(),
                     score: data.score,
-                    regions: data.regions
+                    regions: data.regions,
+                    blobs: data.blobs // Blobs detectados para filtrado inteligente
                 });
             }
         }
@@ -426,7 +373,7 @@ function handlePeerConnected(socketId) {
     const conn = connections.get(socketId);
     if (!conn) return;
 
-    console.log(`[CONNECT] ✅ WebRTC establecido: ${socketId} <-> ${conn.connectedTo}`);
+    console.log(`[CONNECT] ✅ Conexión establecida: ${socketId} <-> ${conn.connectedTo}`);
     
     if (conn.connectedTo) {
         const peerConn = connections.get(conn.connectedTo);
@@ -484,6 +431,7 @@ server.listen(PORT, () => {
 ║  Puerto: ${PORT}                                    ║
 ║  Password: ${APP_PASSWORD}                          ║
 ║  Estado: EJECUTANDO                             ║
+║  Modo: Envío de Frames (simulación video)      ║
 ╚════════════════════════════════════════════════╝
     `);
 });
