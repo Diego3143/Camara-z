@@ -1021,6 +1021,11 @@
             if (role === 'camera') {
                 socket.emit('registerAsCamera');
             } else {
+                // Cambiar inmediatamente a la pantalla del espectador
+                showScreen('spectatorScreen');
+                // Mostrar estado de conexión
+                document.getElementById('spectatorStatus').textContent = 'Conectando al servidor...';
+                document.getElementById('spectatorStatusDot').className = 'status-dot connecting';
                 socket.emit('registerAsSpectator');
             }
         }
@@ -1337,7 +1342,7 @@
 
             // Manejar stream remoto
             peerConnection.ontrack = (event) => {
-                console.log('Stream remoto recibido');
+                console.log('Stream remoto recibido:', event.streams[0]);
                 remoteStream = event.streams[0];
                 updateRemoteVideo();
             };
@@ -1465,6 +1470,12 @@
             } else if (currentRole === 'spectator') {
                 document.getElementById('spectatorStatus').textContent = 'Conectado';
                 document.getElementById('spectatorStatusDot').className = 'status-dot connected';
+                // Mostrar video cuando se conecte
+                setTimeout(() => {
+                    if (remoteStream) {
+                        updateRemoteVideo();
+                    }
+                }, 1000);
             }
         }
 
@@ -1474,12 +1485,27 @@
 
         function handleCameraAvailable(data) {
             console.log('Cámara disponible:', data.cameraId);
-            document.getElementById('spectatorStatus').textContent = 'Cámara encontrada. Conectando...';
+            if (currentRole === 'spectator') {
+                document.getElementById('spectatorStatus').textContent = 'Cámara encontrada. Conectando...';
+                // Inicializar canvas para motion boxes
+                setTimeout(() => {
+                    const videoElement = document.getElementById('remoteVideo');
+                    if (videoElement) {
+                        remoteMotionCanvas = document.getElementById('remoteMotionCanvas');
+                        if (remoteMotionCanvas) {
+                            remoteMotionCtx = remoteMotionCanvas.getContext('2d');
+                        }
+                    }
+                }, 500);
+            }
         }
 
         function handleNoCameraAvailable(data) {
             console.log('No hay cámaras disponibles');
-            document.getElementById('spectatorStatus').textContent = 'Sin cámaras disponibles';
+            if (currentRole === 'spectator') {
+                document.getElementById('spectatorStatus').textContent = 'Sin cámaras disponibles. Esperando...';
+                document.getElementById('spectatorStatusDot').className = 'status-dot disconnected';
+            }
         }
 
         function updateRemoteVideo() {
