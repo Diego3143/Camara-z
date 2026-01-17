@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>SecureStream - Vigilancia Remota</title>
+    <style>
+        /* ============================================
+           ESTILOS PRINCIPALES - SecureStream
+           Sistema de Vigilancia Remota con WebRTC
+           ============================================ */
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e8e8e8;
+            overflow-x: hidden;
+        }
+
+        /* Contenedor principal */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Pantallas */
+        .screen {
+            display: none;
+            flex: 1;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .screen.active {
+            display: flex;
+        }
+
+        /* Pantalla de autenticación */
+        .auth-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .logo p {
+            color: #888;
+            margin-top: 10px;
+        }
+
+        /* Campos de formulario */
+        .form-group {
+            margin-bottom: 20px;
+            width: 100%;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #00d9ff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Botones */
+        .btn {
+            width: 100%;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #00d9ff, #00ff88);
+            color: #1a1a2e;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 217, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-danger {
+            background: linear-gradient(90deg, #ff4757, #ff6b81);
+            color: #fff;
+        }
+
+        /* Mensajes de estado */
+        .status-message {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            width: 100%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .status-message.error {
+            background: rgba(255, 71, 87, 0.2);
+            border: 1px solid rgba(255, 71, 87, 0.5);
+            color: #ff6b81;
+        }
+
+        .status-message.success {
+            background: rgba(0, 255, 136, 0.2);
+            border: 1px solid rgba(0, 255, 136, 0.5);
+            color: #00ff88;
+        }
+
+        .status-message.info {
+            background: rgba(0, 217, 255, 0.2);
+            border: 1px solid rgba(0, 217, 255, 0.5);
+            color: #00d9ff;
+        }
+
+        /* Pantalla de selección de rol */
+        .role-selection {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .role-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            width: 200px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .role-card:hover {
+            transform: translateY(-5px);
+            border-color: #00d9ff;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .role-card .icon {
+            font-size: 4rem;
+            margin-bottom: 15px;
+        }
+
+        .role-card h3 {
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .role-card p {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        /* Pantalla de cámara */
+        .camera-controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            flex-wrap: wrap;
+            z-index: 100;
+        }
+
+        .camera-controls .btn {
+            width: auto;
+            min-width: 120px;
+        }
+
+        /* Pantalla de espectador */
+        .video-container {
+            width: 100%;
+            max-width: 800px;
+            position: relative;
+            background: #000;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .video-container video {
+            width: 100%;
+            display: block;
+            background: #000;
+        }
+
+        .video-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 15px;
+            background: linear-gradient(180deg, rgba(0,0,0,0.7) 0%, transparent 100%);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #00ff88;
+        }
+
+        .status-dot.connecting {
+            background: #ffaa00;
+        }
+
+        .status-dot.disconnected {
+            background: #ff4757;
+        }
+
+        /* Canvas para detección de movimiento */
+        #motionCanvas {
+            display: none;
+        }
+
+        /* Panel de alertas */
+        .alerts-panel {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .alert-item {
+            background: rgba(255, 71, 87, 0.9);
+            color: #fff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            animation: slideIn 0.3s ease;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .alert-item img {
+            width: 60px;
+            height: 45px;
+            border-radius: 5px;
+            object-fit: cover;
+        }
+
+        /* Loader */
+        .loader {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border-top-color: #00d9ff;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        /* Indicador de espera */
+        .waiting-indicator {
+            text-align: center;
+            padding: 40px;
+        }
+
+        .waiting-indicator .icon {
+            font-size: 5rem;
+            margin-bottom: 20px;
+        }
+
+        .waiting-indicator p {
+            color: #888;
+            margin-top: 10px;
+        }
+
+        /* Barra de título */
+        .title-bar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+            border-radius: 10px;
+        }
+
+        .title-bar h2 {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .title-bar .btn-logout {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .title-bar .btn-logout:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Estadísticas */
+        .stats-bar {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px 25px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-item .value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #00d9ff;
+        }
+
+        .stat-item .label {
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 5px;
+        }
+
+        /* Controles adicionales para espectador */
+        .spectator-controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        /* Animaciones */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(100px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+
+            .auth-container {
+                padding: 25px;
+                margin: 10px;
+            }
+
+            .role-selection {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .role-card {
+                width: 100%;
+                max-width: 300px;
+            }
+
+            .video-container {
+                width: 100%;
+            }
+
+            .camera-controls {
+                padding: 15px;
+            }
+
+            .camera-controls .btn {
+                flex: 1;
+                min-width: 80px;
+                padding: 12px 15px;
+            }
+
+            .alerts-panel {
+                width: calc(100% - 40px);
+                right: 20px;
+                left: 20px;
+            }
+
+            .stats-bar {
+                gap: 10px;
+            }
+
+            .stat-item {
+                padding: 10px 15px;
+            }
+        }
+
+        /* Scrollbar personalizada */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <!-- Pantalla de autenticación -->
+    <div id="authScreen" class="screen active">
+        <div class="auth-container">
+            <div class="logo">
+                <h1>SecureStream</h1>
+                <p>Sistema de Vigilancia Remota</p>
+            </div>
+            <div id="authMessage" class="status-message" style="display: none;"></div>
+            <form id="authForm">
+                <div class="form-group">
+                    <label for="password">Contraseña de Acceso</label>
+                    <input type="password" id="password" placeholder="Ingresa tu contraseña" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Acceder</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Pantalla de selección de rol -->
+    <div id="roleScreen" class="screen">
+        <div class="title-bar">
+            <h2>🔐 Seleccionar Modo</h2>
+            <button class="btn-logout" onclick="logout()">Cerrar Sesión</button>
+        </div>
+        <div class="role-selection">
+            <div class="role-card" onclick="selectRole('camera')">
+                <div class="icon">📹</div>
+                <h3>Cámara</h3>
+                <p>Comparte tu cámara para vigilancia</p>
+            </div>
+            <div class="role-card" onclick="selectRole('spectator')">
+                <div class="icon">👁️</div>
+                <h3>Espectador</h3>
+                <p>Observa la cámara remota</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pantalla de cámara -->
+    <div id="cameraScreen" class="screen">
+        <div class="title-bar">
+            <h2>📹 Modo Cámara</h2>
+            <button class="btn-logout" onclick="logout()">Salir</button>
+        </div>
+        <div class="stats-bar">
+            <div class="stat-item">
+                <div class="value" id="motionScore">0%</div>
+                <div class="label">Movimiento</div>
+            </div>
+            <div class="stat-item">
+                <div class="value" id="connectionCount">0</div>
+                <div class="label">Espectadores</div>
+            </div>
+        </div>
+        <div class="video-container">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <canvas id="motionCanvas"></canvas>
+        </div>
+        <div class="camera-controls">
+            <button class="btn btn-secondary" onclick="toggleMotionDetection()">
+                🎯 Detección: <span id="motionStatus">ON</span>
+            </button>
+            <button class="btn btn-primary" onclick="toggleFlashlight()">
+                🔦 Linterna
+            </button>
+            <button class="btn btn-danger" onclick="stopCamera()">
+                ⏹️ Detener
+            </button>
+        </div>
+    </div>
+
+    <!-- Pantalla de espectador -->
+    <div id="spectatorScreen" class="screen">
+        <div class="title-bar">
+            <h2>👁️ Modo Espectador</h2>
+            <button class="btn-logout" onclick="logout()">Salir</button>
+        </div>
+        <div id="spectatorContent">
+            <!-- Contenido dinámico -->
+        </div>
+    </div>
+
+    <!-- Panel de alertas (espectador) -->
+    <div id="alertsPanel" class="alerts-panel" style="display: none;"></div>
+
+    <!-- Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        /**
+         * SecureStream - Cliente de Vigilancia Remota
+         * Implementación WebRTC con Socket.io
+         */
+
+        // ============================================
+        // VARIABLES GLOBALES
+        // ============================================
+
+        let socket = null;
+        let peerConnection = null;
+        let localStream = null;
+        let remoteStream = null;
+        let motionCanvas, motionCtx;
+        let previousFrame = null;
+        let motionDetectionEnabled = true;
+        let flashlightOn = false;
+        let currentRole = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+
+        // Configuración de WebRTC
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ]
+        };
+
+        // ============================================
+        // INICIALIZACIÓN
+        // ============================================
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeSocket();
+            setupFormHandlers();
+        });
+
+        /**
+         * Inicializa la conexión Socket.io
+         */
+        function initializeSocket() {
+            socket = io({
+                transports: ['websocket', 'polling'],
+                reconnection: true,
+                reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+                reconnectionDelay: 1000
+            });
+
+            socket.on('connect', () => {
+                console.log('Conectado al servidor:', socket.id);
+                reconnectAttempts = 0;
+                showAuthMessage('Conectado al servidor', 'success');
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('Desconectado:', reason);
+                showAuthMessage('Desconectado del servidor. Reconectando...', 'error');
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Error de conexión:', error);
+                reconnectAttempts++;
+                if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                    showAuthMessage('No se puede conectar al servidor. Verifica tu conexión.', 'error');
+                }
+            });
+
+            // Eventos de autenticación
+            socket.on('authResult', (data) => {
+                if (data.success) {
+                    showScreen('roleScreen');
+                } else {
+                    showAuthMessage('Contraseña incorrecta', 'error');
+                }
+            });
+
+            // Eventos de cámara
+            socket.on('cameraRegistered', (data) => {
+                showScreen('cameraScreen');
+                startCamera();
+            });
+
+            socket.on('connectionInitiated', handleConnectionInitiated);
+
+            // Eventos de espectador
+            socket.on('cameraAvailable', handleCameraAvailable);
+            socket.on('noCameraAvailable', handleNoCameraAvailable);
+
+            // Eventos WebRTC
+            socket.on('webrtcOffer', handleWebRTCOffer);
+            socket.on('webrtcAnswer', handleWebRTCAnswer);
+            socket.on('webrtcIceCandidate', handleICECandidate);
+
+            // Eventos de conexión
+            socket.on('connectionStateChange', handleConnectionStateChange);
+            socket.on('peerDisconnected', handlePeerDisconnected);
+            socket.on('peerConnected', handlePeerConnected);
+
+            // Eventos de alertas
+            socket.on('motionAlert', handleMotionAlert);
+            socket.on('flashlightStatus', handleFlashlightStatus);
+        }
+
+        /**
+         * Configura los manejadores de formularios
+         */
+        function setupFormHandlers() {
+            document.getElementById('authForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const password = document.getElementById('password').value;
+                socket.emit('authenticate', password);
+            });
+        }
+
+        // ============================================
+        // NAVEGACIÓN DE PANTALLAS
+        // ============================================
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(screen => {
+                screen.classList.remove('active');
+            });
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        function showAuthMessage(message, type) {
+            const msgEl = document.getElementById('authMessage');
+            msgEl.textContent = message;
+            msgEl.className = `status-message ${type}`;
+            msgEl.style.display = 'block';
+        }
+
+        // ============================================
+        // AUTENTICACIÓN Y ROLES
+        // ============================================
+
+        function selectRole(role) {
+            currentRole = role;
+            if (role === 'camera') {
+                socket.emit('registerAsCamera');
+            } else {
+                socket.emit('registerAsSpectator');
+            }
+        }
+
+        function logout() {
+            stopCamera();
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            currentRole = null;
+            showScreen('authScreen');
+            document.getElementById('password').value = '';
+        }
+
+        // ============================================
+        // CÁMARA LOCAL
+        // ============================================
+
+        async function startCamera() {
+            try {
+                // Obtener stream de cámara
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: false
+                });
+
+                const videoElement = document.getElementById('localVideo');
+                videoElement.srcObject = localStream;
+
+                // Inicializar canvas para detección de movimiento
+                motionCanvas = document.getElementById('motionCanvas');
+                motionCtx = motionCanvas.getContext('2d');
+
+                // Configurar tamaño del canvas
+                videoElement.onloadedmetadata = () => {
+                    motionCanvas.width = videoElement.videoWidth;
+                    motionCanvas.height = videoElement.videoHeight;
+                    motionDetectionEnabled = true;
+                    detectMotion();
+                };
+
+                // Notificar al servidor que la cámara está lista
+                socket.emit('cameraReady');
+
+            } catch (error) {
+                console.error('Error accediendo a la cámara:', error);
+                alert('Error accediendo a la cámara. Verifica los permisos.');
+            }
+        }
+
+        function stopCamera() {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            motionDetectionEnabled = false;
+            previousFrame = null;
+        }
+
+        // ============================================
+        // DETECCIÓN DE MOVIMIENTO
+        // ============================================
+
+        function toggleMotionDetection() {
+            motionDetectionEnabled = !motionDetectionEnabled;
+            document.getElementById('motionStatus').textContent = motionDetectionEnabled ? 'ON' : 'OFF';
+            if (motionDetectionEnabled && localStream) {
+                detectMotion();
+            }
+        }
+
+        function detectMotion() {
+            if (!motionDetectionEnabled || !localStream) return;
+
+            const video = document.getElementById('localVideo');
+            if (video.readyState !== 4) {
+                requestAnimationFrame(detectMotion);
+                return;
+            }
+
+            // Capturar frame actual
+            motionCtx.drawImage(video, 0, 0);
+            const currentFrame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+            const currentData = currentFrame.data;
+
+            if (previousFrame) {
+                const previousData = previousFrame.data;
+                let diffScore = 0;
+                const threshold = 30;
+                const sensitivity = 0.01;
+
+                // Comparar frames
+                for (let i = 0; i < currentData.length; i += 4) {
+                    const r = Math.abs(currentData[i] - previousData[i]);
+                    const g = Math.abs(currentData[i + 1] - previousData[i + 1]);
+                    const b = Math.abs(currentData[i + 2] - previousData[i + 2]);
+
+                    if (r + g + b > threshold) {
+                        diffScore++;
+                    }
+                }
+
+                const motionPercent = (diffScore / (currentData.length / 4)) * 100;
+                document.getElementById('motionScore').textContent = Math.round(motionPercent) + '%';
+
+                // Enviar alerta si hay movimiento significativo
+                if (motionPercent > 2) {
+                    socket.emit('motionDetected', {
+                        score: motionPercent,
+                        imageData: motionCanvas.toDataURL('image/jpeg', 0.3)
+                    });
+                }
+            }
+
+            // Guardar frame para próxima comparación
+            previousFrame = currentFrame;
+
+            requestAnimationFrame(detectMotion);
+        }
+
+        // ============================================
+        // CONTROL DE LINTERNA
+        // ============================================
+
+        async function toggleFlashlight() {
+            if (!localStream) return;
+
+            try {
+                const track = localStream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities();
+
+                if (!capabilities.torch) {
+                    alert('Tu dispositivo no soporta control de linterna');
+                    return;
+                }
+
+                flashlightOn = !flashlightOn;
+                await track.applyConstraints({
+                    advanced: [{ torch: flashlightOn }]
+                });
+
+                socket.emit('toggleFlashlight', flashlightOn);
+
+            } catch (error) {
+                console.error('Error controlando linterna:', error);
+            }
+        }
+
+        // ============================================
+        // SEÑALIZACIÓN WEBRTC
+        // ============================================
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            // Agregar stream local si existe
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
+
+            // Manejar stream remoto
+            peerConnection.ontrack = (event) => {
+                console.log('Stream remoto recibido');
+                remoteStream = event.streams[0];
+                updateRemoteVideo();
+            };
+
+            // Manejar candidatos ICE
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit('webrtcIceCandidate', {
+                        targetSocketId: getPeerSocketId(),
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            // Manejar cambios de estado
+            peerConnection.onconnectionstatechange = () => {
+                const state = peerConnection.connectionState;
+                console.log('Estado de conexión WebRTC:', state);
+                socket.emit('connectionStateChange', state);
+            };
+
+            // Manejar ICE connection state
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log('Estado ICE:', peerConnection.iceConnectionState);
+            };
+
+            return peerConnection;
+        }
+
+        function getPeerSocketId() {
+            // Obtener ID del peer de los datos de conexión
+            return window.peerSocketId;
+        }
+
+        async function handleConnectionInitiated(data) {
+            console.log('Iniciando conexión con:', data.peerId, 'Rol:', data.role);
+            window.peerSocketId = data.peerId;
+
+            createPeerConnection();
+
+            if (data.role === 'spectator') {
+                // El espectador crea la oferta
+                try {
+                    const offer = await peerConnection.createOffer();
+                    await peerConnection.setLocalDescription(offer);
+                    socket.emit('webrtcOffer', {
+                        targetSocketId: data.peerId,
+                        offer: offer
+                    });
+                } catch (error) {
+                    console.error('Error creando oferta:', error);
+                }
+            }
+        }
+
+        async function handleWebRTCOffer(data) {
+            console.log('Oferta recibida de:', data.fromSocketId);
+            window.peerSocketId = data.fromSocketId;
+
+            createPeerConnection();
+
+            // Agregar stream remoto cuando llegue
+            peerConnection.ontrack = (event) => {
+                console.log('Stream remoto recibido');
+                remoteStream = event.streams[0];
+                updateRemoteVideo();
+            };
+
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                const answer = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answer);
+                socket.emit('webrtcAnswer', {
+                    targetSocketId: data.fromSocketId,
+                    answer: answer
+                });
+            } catch (error) {
+                console.error('Error procesando oferta:', error);
+            }
+        }
+
+        async function handleWebRTCAnswer(data) {
+            console.log('Respuesta recibida');
+            try {
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+            } catch (error) {
+                console.error('Error procesando respuesta:', error);
+            }
+        }
+
+        async function handleICECandidate(data) {
+            try {
+                if (data.candidate) {
+                    await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+                }
+            } catch (error) {
+                console.error('Error agregando candidato ICE:', error);
+            }
+        }
+
+        function handleConnectionStateChange(state) {
+            const statusEl = document.getElementById('connectionStatus');
+            if (statusEl) {
+                statusEl.textContent = state;
+            }
+        }
+
+        function handlePeerDisconnected(data) {
+            console.log('Peer desconectado:', data.reason);
+            showSpectatorMessage('Cámara desconectada. Buscando nueva cámara...', 'info');
+            
+            // Reiniciar conexión
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            remoteStream = null;
+
+            // Buscar nueva cámara
+            if (currentRole === 'spectator') {
+                setTimeout(() => {
+                    socket.emit('registerAsSpectator');
+                }, 2000);
+            }
+        }
+
+        function handlePeerConnected(data) {
+            console.log('Peer conectado');
+            showSpectatorMessage('Conectado a la cámara', 'success');
+        }
+
+        // ============================================
+        // VISTA DEL ESPECTADOR
+        // ============================================
+
+        function handleCameraAvailable(data) {
+            console.log('Cámara disponible:', data.cameraId);
+            showSpectatorMessage('Cámara encontrada. Conectando...', 'info');
+        }
+
+        function handleNoCameraAvailable(data) {
+            console.log('No hay cámaras disponibles');
+            showSpectatorWaiting();
+        }
+
+        function showSpectatorWaiting() {
+            const content = document.getElementById('spectatorContent');
+            content.innerHTML = `
+                <div class="waiting-indicator">
+                    <div class="icon">📹</div>
+                    <div class="loader"></div>
+                    <h3>Buscando Cámara</h3>
+                    <p>No hay cámaras disponibles en este momento.</p>
+                    <p style="margin-top: 10px; color: #666;">Esperando a que una cámara se conecte...</p>
+                </div>
+            `;
+        }
+
+        function showSpectatorConnecting() {
+            const content = document.getElementById('spectatorContent');
+            content.innerHTML = `
+                <div class="waiting-indicator">
+                    <div class="loader"></div>
+                    <h3>Conectando</h3>
+                    <p>Estableciendo conexión segura...</p>
+                </div>
+            `;
+        }
+
+        function showSpectatorVideo() {
+            const content = document.getElementById('spectatorContent');
+            content.innerHTML = `
+                <div class="video-container">
+                    <video id="remoteVideo" autoplay playsinline></video>
+                    <div class="video-overlay">
+                        <div class="connection-status">
+                            <span class="status-dot connected"></span>
+                            <span id="connectionStatus">Conectado</span>
+                        </div>
+                        <div id="peerInfo">Cámara remota</div>
+                    </div>
+                </div>
+                <div class="spectator-controls">
+                    <button class="btn btn-secondary" onclick="requestFullScreen()">
+                        ⛶ Pantalla Completa
+                    </button>
+                    <button class="btn btn-danger" onclick="disconnectFromCamera()">
+                        ⏹️ Desconectar
+                    </button>
+                </div>
+            `;
+        }
+
+        function showSpectatorMessage(message, type) {
+            const content = document.getElementById('spectatorContent');
+            content.innerHTML = `
+                <div class="waiting-indicator">
+                    <div class="icon">${type === 'success' ? '✅' : type === 'error' ? '❌' : '⏳'}</div>
+                    <h3>${message}</h3>
+                </div>
+            `;
+        }
+
+        function updateRemoteVideo() {
+            if (!remoteStream) return;
+
+            showSpectatorVideo();
+            const videoElement = document.getElementById('remoteVideo');
+            if (videoElement) {
+                videoElement.srcObject = remoteStream;
+            }
+        }
+
+        function disconnectFromCamera() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            remoteStream = null;
+            socket.emit('registerAsSpectator');
+            showSpectatorWaiting();
+        }
+
+        // ============================================
+        // ALERTAS Y NOTIFICACIONES
+        // ============================================
+
+        function handleMotionAlert(data) {
+            console.log('Alerta de movimiento:', data.timestamp);
+            
+            // Mostrar notificación
+            if (Notification.permission === 'granted') {
+                new Notification('¡Movimiento detectado!', {
+                    body: `Nivel de movimiento: ${Math.round(data.score)}%`,
+                    icon: '/icon.png'
+                });
+            }
+
+            // Mostrar en panel de alertas
+            const panel = document.getElementById('alertsPanel');
+            panel.style.display = 'block';
+            
+            const alertItem = document.createElement('div');
+            alertItem.className = 'alert-item';
+            alertItem.innerHTML = `
+                <div>
+                    <strong>¡Movimiento!</strong>
+                    <br>
+                    <small>${new Date(data.timestamp).toLocaleTimeString()}</small>
+                </div>
+                ${data.imageData ? `<img src="${data.imageData}" alt="Movimiento">` : ''}
+            `;
+            
+            panel.insertBefore(alertItem, panel.firstChild);
+
+            // Eliminar después de 10 segundos
+            setTimeout(() => {
+                alertItem.style.opacity = '0';
+                setTimeout(() => alertItem.remove(), 300);
+            }, 10000);
+        }
+
+        function handleFlashlightStatus(data) {
+            console.log('Estado de linterna:', data.enabled);
+            // La cámara está controlando la linterna remotamente
+        }
+
+        // ============================================
+        // UTILIDADES
+        // ============================================
+
+        function requestFullScreen() {
+            const video = document.getElementById('remoteVideo');
+            if (video) {
+                if (video.requestFullscreen) {
+                    video.requestFullscreen();
+                } else if (video.webkitRequestFullscreen) {
+                    video.webkitRequestFullscreen();
+                } else if (video.webkitEnterFullscreen) {
+                    video.webkitEnterFullscreen();
+                }
+            }
+        }
+
+        // Solicitar permisos de notificación
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+
+        // Prevenir sleeps en móvil para la cámara
+        if ('wakeLock' in navigator) {
+            let wakeLock = null;
+            const requestWakeLock = async () => {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch (err) {
+                    console.log('Wake Lock no disponible:', err);
+                }
+            };
+            requestWakeLock();
+            document.addEventListener('visibilitychange', async () => {
+                if (wakeLock !== null && document.visibilityState === 'visible') {
+                    requestWakeLock();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
