@@ -1,0 +1,15 @@
+{
+  "name": "secure-stream-surveillance",
+  "version": "1.0.0",
+  "description": "Sistema de vigilancia remota con WebRTC",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "uuid": "^9.0.0"
+  }
+}
