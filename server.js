@@ -145,10 +145,9 @@ io.on('connection', (socket) => {
     }
   });
 
-  // WebRTC Signaling
+  // WebRTC Signaling - EL ESPECTADOR INICIA LA CONEXCIÓN
   socket.on('webrtc_offer', (data) => {
-    if (!currentRoom || clientRole !== 'camera') return;
-    
+    // El espectador envía oferta a la cámara
     const { targetSocketId, offer } = data;
     const targetSocket = sockets.get(targetSocketId);
     
@@ -157,12 +156,14 @@ io.on('connection', (socket) => {
         fromSocketId: socket.id,
         offer: offer
       });
+      console.log(`Oferta WebRTC enviada de ${socket.id} a ${targetSocketId}`);
+    } else {
+      console.error(`No se encontró socket ${targetSocketId} para enviar oferta`);
     }
   });
 
   socket.on('webrtc_answer', (data) => {
-    if (!currentRoom || clientRole !== 'viewer') return;
-    
+    // La cámara responde al espectador
     const { targetSocketId, answer } = data;
     const targetSocket = sockets.get(targetSocketId);
     
@@ -175,8 +176,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ice_candidate', (data) => {
-    if (!currentRoom) return;
-    
     const { targetSocketId, candidate } = data;
     const targetSocket = sockets.get(targetSocketId);
     
