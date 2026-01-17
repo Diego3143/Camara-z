@@ -1007,7 +1007,7 @@
                 }
             }
 
-            async initWebRTC(targetSocketId) {
+            async initWebRTC(targetCameraId) {
                 const config = {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
@@ -1017,14 +1017,7 @@
 
                 this.peerConnection = new RTCPeerConnection(config);
 
-                // Add local stream tracks (camera role)
-                if (this.localStream) {
-                    this.localStream.getTracks().forEach(track => {
-                        this.peerConnection.addTrack(track, this.localStream);
-                    });
-                }
-
-                // Handle remote stream (viewer role)
+                // Handle remote stream
                 this.peerConnection.ontrack = (event) => {
                     console.log('Remote track received');
                     this.remoteStream = event.streams[0];
@@ -1036,26 +1029,46 @@
                 // Handle ICE candidates
                 this.peerConnection.onicecandidate = (event) => {
                     if (event.candidate && this.socket) {
-                        this.socket.emit('ice_candidate', {
-                            targetSocketId: targetSocketId || this.targetCameraId,
-                            candidate: event.candidate
-                        });
+                        const targetId = this.role === 'viewer' ? targetCameraId : this.targetViewerId;
+                        if (targetId) {
+                            this.socket.emit('ice_candidate', {
+                                targetSocketId: targetId,
+                                candidate: event.candidate
+                            });
+                        }
                     }
                 };
 
-                // Create offer if we're the camera
-                if (this.role === 'camera') {
+                // AGREGAR TRACKS DE LA CÁMARA (si existe stream local)
+                if (this.localStream && this.role === 'camera') {
+                    this.localStream.getTracks().forEach(track => {
+                        this.peerConnection.addTrack(track, this.localStream);
+                        console.log('Track de cámara agregado a peer connection');
+                    });
+                }
+
+                // EL ESPECTADOR CREA LA OFERTA (inicia la conexión)
+                if (this.role === 'viewer' && targetCameraId) {
+                    this.targetCameraId = targetCameraId;
+                    
                     const offer = await this.peerConnection.createOffer();
                     await this.peerConnection.setLocalDescription(offer);
                     
                     this.socket.emit('webrtc_offer', {
-                        targetSocketId: targetSocketId,
+                        targetSocketId: targetCameraId,
                         offer: offer
                     });
+                    console.log('Oferta WebRTC enviada al espectador');
+                }
+                
+                // LA CÁMARA RECIBE LA OFERTA Y RESPONDE
+                if (this.role === 'camera') {
+                    this.targetViewerId = targetCameraId; // Aquí targetCameraId es el socketId del espectador
                 }
             }
 
             async handleOffer(data) {
+                // La cámara recibe la oferta del espectador y responde
                 this.targetViewerId = data.fromSocketId;
                 
                 const offer = data.offer;
@@ -1068,9 +1081,11 @@
                     targetSocketId: data.fromSocketId,
                     answer: answer
                 });
+                console.log('Respuesta WebRTC enviada');
             }
 
             async handleAnswer(data) {
+                // El espectador recibe la respuesta de la cámara
                 await this.peerConnection.setRemoteDescription(data.answer);
             }
 
