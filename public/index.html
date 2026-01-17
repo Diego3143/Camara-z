@@ -724,17 +724,41 @@
                 <div class="label">FPS</div>
             </div>
         </div>
-        <div class="video-panel">
+        <div class="video-panel" id="cameraVideoPanel">
             <!-- Video local oculto para captura -->
             <video id="localVideo" autoplay playsinline muted style="display:none;"></video>
             <!-- Canvas para captura de frames -->
             <canvas id="captureCanvas" style="display:none;"></canvas>
             <!-- Canvas para visualización y motion detection -->
             <canvas id="motionCanvas"></canvas>
+            
+            <!-- Demo image source (placeholder SVG inline) -->
+            <img id="demoImage" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'%3E%3Crect fill='%23334155' width='640' height='480'/%3E%3Ccircle fill='%23475569' cx='320' cy='200' r='80'/%3E%3Crect fill='%23475569' x='160' y='320' width='320' height='120' rx='20'/%3E%3Ctext fill='%23e2e8f0' font-family='sans-serif' font-size='28' x='50%25' y='420' text-anchor='middle'%3EDemo Mode%3C/text%3E%3C/svg%3E" style="display:none; width:100%; height:100%; object-fit:cover;">
+            
+            <!-- Overlay de modo demo -->
+            <div id="demoOverlay" style="display:none; position:absolute; top:10px; right:10px; background:#f59e0b; color:#1a1a2e; padding:5px 10px; border-radius:5px; font-size:12px; font-weight:bold; z-index:20;">MODO DEMO</div>
+            
+            <!-- Overlay de error -->
+            <div id="cameraErrorOverlay" style="display:none; position:absolute; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.85); z-index:30; flex-direction:column; align-items:center; justify-content:center; padding:20px; text-align:center;">
+                <div id="errorIcon" style="font-size:48px; margin-bottom:15px;">⚠️</div>
+                <h3 id="errorTitle" style="color:#ef4444; margin-bottom:10px; font-size:18px;">Error de Cámara</h3>
+                <p id="errorMessage" style="color:#f3f4f6; margin-bottom:20px; font-size:14px; line-height:1.5;"></p>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
+                    <button id="retryCameraBtn" class="btn btn-primary" style="width:auto; padding:12px 25px; min-width:120px;" onclick="retryCamera()">🔄 Reintentar</button>
+                    <button id="demoModeBtn" class="btn btn-secondary" style="width:auto; padding:12px 25px; min-width:120px; background:#4b5563;" onclick="enableDemoMode()">🎭 Modo Demo</button>
+                </div>
+            </div>
+            
+            <!-- Loading spinner -->
+            <div id="cameraLoading" style="display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:15;">
+                <div class="loader"></div>
+                <p style="color:#fff; margin-top:10px;">Iniciando cámara...</p>
+            </div>
+            
             <div class="video-overlay">
                 <div class="connection-status">
                     <span class="status-dot connecting"></span>
-                    <span id="cameraStatus">Esperando espectador...</span>
+                    <span id="cameraStatus">Iniciando...</span>
                 </div>
                 <div>
                     <span id="flashlightAutoIndicator" class="auto-indicator off">AUTO</span>
@@ -750,6 +774,9 @@
             </button>
             <button class="btn btn-secondary" onclick="toggleAutoFlashlight()">
                 ⭐ Auto <span id="autoStatus">OFF</span>
+            </button>
+            <button class="btn btn-secondary" onclick="enableDemoMode()" id="demoModeControlBtn" style="background:#4b5563;">
+                🎭 Demo
             </button>
             <button class="btn btn-danger" onclick="stopCamera()">
                 ⏹️ Detener
@@ -1043,64 +1070,329 @@
         // CÁMARA LOCAL Y CAPTURA DE FRAMES
         // ============================================
 
+        // Variables para manejo robusto de cámara
+        let isDemoMode = false;
+        let retryAttempts = 0;
+        const MAX_RETRY_ATTEMPTS = 3;
+        const CAMERA_TIMEOUT_MS = 7000; // 7 segundos timeout
+
+        // Configuraciones de fallback para resolución
+        const cameraConfigs = [
+            { // Intento 1: HD ideal
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                name: 'HD (1280x720)'
+            },
+            { // Intento 2: VGA estándar
+                video: {
+                    facingMode: 'environment',
+                    width: { ideal: 640 },
+                    height: { ideal: 480 }
+                },
+                name: 'VGA (640x480)'
+            },
+            { // Intento 3: Mínimo posible
+                video: true,
+                name: 'Mínimo'
+            }
+        ];
+
+        /**
+         * Muestra el overlay de error con mensaje específico
+         */
+        function showCameraError(error) {
+            const overlay = document.getElementById('cameraErrorOverlay');
+            const errorIcon = document.getElementById('errorIcon');
+            const errorTitle = document.getElementById('errorTitle');
+            const errorMessage = document.getElementById('errorMessage');
+            const loading = document.getElementById('cameraLoading');
+            
+            // Ocultar loading si está visible
+            if (loading) loading.style.display = 'none';
+            
+            // Determinar tipo de error y mensaje apropiado
+            let title = 'Error de Cámara';
+            let message = 'Ocurrió un error al acceder a la cámara.';
+            let icon = '⚠️';
+            
+            if (error.name === 'AbortError' || error.code === 20) {
+                title = 'Timeout de Cámara';
+                message = 'La cámara tardó demasiado en iniciar. Puede estar siendo usada por otra aplicación (Zoom, Teams, etc.). Cierra otras aplicaciones e intenta de nuevo.';
+                icon = '⏱️';
+            } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                title = 'Permiso Denegado';
+                message = 'No se permitió el acceso a la cámara. Haz clic en el icono de candado 🔒 en la barra de direcciones y permite el acceso a la cámara.';
+                icon = '🔒';
+            } else if (error.name === 'NotFoundError') {
+                title = 'Cámara No Encontrada';
+                message = 'No se detectó ninguna cámara en este dispositivo. Conecta una cámara o usa el Modo Demo.';
+                icon = '📷';
+            } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+                title = 'Error de Hardware';
+                message = 'La cámara está siendo usada por otro proceso o no responde. Cierra otras aplicaciones que puedan estar usando la cámara.';
+                icon = '🔧';
+            } else if (error.name === 'OverconstrainedError') {
+                title = 'Resolución No Soportada';
+                message = 'La resolución solicitada no es compatible con tu cámara. Reintentando con configuración más baja...';
+                icon = '📐';
+            } else {
+                message = error.message || 'Error desconocido: ' + error.name;
+            }
+            
+            // Actualizar UI
+            errorTitle.textContent = title;
+            errorMessage.textContent = message;
+            errorIcon.textContent = icon;
+            
+            // Mostrar overlay
+            overlay.style.display = 'flex';
+            
+            // Actualizar estado
+            document.getElementById('cameraStatus').textContent = 'Error';
+            document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot disconnected';
+            
+            console.error('Camera Error:', error.name, '-', error.message || error);
+        }
+
+        /**
+         * Oculta el overlay de error
+         */
+        function hideCameraError() {
+            document.getElementById('cameraErrorOverlay').style.display = 'none';
+        }
+
+        /**
+         * Muestra el indicador de loading
+         */
+        function showCameraLoading() {
+            document.getElementById('cameraLoading').style.display = 'block';
+            document.getElementById('cameraStatus').textContent = 'Iniciando...';
+        }
+
+        /**
+         * Oculta el indicador de loading
+         */
+        function hideCameraLoading() {
+            document.getElementById('cameraLoading').style.display = 'none';
+        }
+
+        /**
+         * Inicializa la cámara con manejo robusto de errores
+         */
         async function startCamera() {
+            showCameraLoading();
+            hideCameraError();
+            
+            // Determinar qué configuración usar
+            const configIndex = Math.min(retryAttempts, cameraConfigs.length - 1);
+            const currentConfig = cameraConfigs[configIndex];
+            
+            console.log(`[CAM] Intento ${retryAttempts + 1}: Usando configuración ${currentConfig.name}`);
+            
             try {
-                // Obtener stream de cámara
-                localStream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: 'environment',
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
+                // Crear promise con timeout personalizado
+                const streamPromise = navigator.mediaDevices.getUserMedia({
+                    video: currentConfig.video,
                     audio: false
                 });
+                
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => {
+                        reject(new DOMException('Timeout starting video source', 'AbortError'));
+                    }, CAMERA_TIMEOUT_MS);
+                });
+                
+                // Race entre getUserMedia y timeout
+                localStream = await Promise.race([streamPromise, timeoutPromise]);
+                
+                // Éxito - configurar video
+                await setupVideoStream(localStream);
+                
+            } catch (error) {
+                console.log(`[CAM] Error en intento ${retryAttempts + 1}:`, error.name);
+                
+                // Si hay overconstrained, reintentar con siguiente configuración
+                if (error.name === 'OverconstrainedError' && retryAttempts < cameraConfigs.length - 1) {
+                    retryAttempts++;
+                    return startCamera(); // Reintentar recursivamente
+                }
+                
+                // Si excedió reintentos o es otro error, mostrar overlay
+                if (retryAttempts >= MAX_RETRY_ATTEMPTS) {
+                    showCameraError(error);
+                } else {
+                    retryAttempts++;
+                    showCameraError(error);
+                }
+            }
+        }
 
-                const videoElement = document.getElementById('localVideo');
-                videoElement.srcObject = localStream;
+        /**
+         * Configura el stream de video una vez obtenido
+         */
+        async function setupVideoStream(stream) {
+            const videoElement = document.getElementById('localVideo');
+            videoElement.srcObject = stream;
+            
+            // Inicializar canvas de captura
+            captureCanvas = document.getElementById('captureCanvas');
+            captureCtx = captureCanvas.getContext('2d');
+            
+            // Inicializar canvas de motion detection
+            motionCanvas = document.getElementById('motionCanvas');
+            motionCtx = motionCanvas.getContext('2d');
+            
+            // Configurar cuando el video esté listo
+            videoElement.onloadedmetadata = () => {
+                captureCanvas.width = videoElement.videoWidth;
+                captureCanvas.height = videoElement.videoHeight;
+                motionCanvas.width = videoElement.videoWidth;
+                motionCanvas.height = videoElement.videoHeight;
+                
+                // Todo listo
+                onCameraReady();
+            };
+            
+            videoElement.onerror = (e) => {
+                console.error('Video element error:', e);
+                showCameraError(new DOMException('Video playback error', 'AbortError'));
+            };
+        }
 
-                // Inicializar canvas de captura para enviar frames
-                captureCanvas = document.getElementById('captureCanvas');
-                captureCtx = captureCanvas.getContext('2d');
+        /**
+         * Callback cuando la cámara está lista para transmitir
+         */
+        function onCameraReady() {
+            // Resetear contadores
+            retryAttempts = 0;
+            isDemoMode = false;
+            
+            // Ocultar overlays de error
+            hideCameraError();
+            hideCameraLoading();
+            
+            // Iniciar funcionalidades
+            motionDetectionEnabled = true;
+            previousFrame = null;
+            
+            startFrameCapture();
+            startMotionDetection();
+            startAutoFlashlight();
+            
+            // Notificar al servidor
+            socket.emit('cameraReady');
+            
+            // Actualizar UI
+            document.getElementById('cameraStatus').textContent = 'Esperando espectador...';
+            document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot connecting';
+            
+            console.log('[CAM] Cámara lista y transmitiendo');
+        }
 
-                // Inicializar canvas para detección de movimiento
-                motionCanvas = document.getElementById('motionCanvas');
-                motionCtx = motionCanvas.getContext('2d');
+        /**
+         * Reintentar iniciar la cámara
+         */
+        async function retryCamera() {
+            // Detener stream anterior si existe
+            stopCamera();
+            
+            // Resetear contador de reintentos
+            retryAttempts = 0;
+            
+            // Esperar un momento antes de reintentar
+            setTimeout(() => {
+                startCamera();
+            }, 500);
+        }
 
-                // Configurar tamaño del canvas cuando el video esté listo
-                videoElement.onloadedmetadata = () => {
-                    captureCanvas.width = videoElement.videoWidth;
-                    captureCanvas.height = videoElement.videoHeight;
-                    motionCanvas.width = videoElement.videoWidth;
-                    motionCanvas.height = videoElement.videoHeight;
-                    
-                    motionDetectionEnabled = true;
-                    previousFrame = null;
-                    
-                    // Iniciar captura de frames
-                    startFrameCapture();
-                    startMotionDetection();
-                    startAutoFlashlight();
-                };
-
+        /**
+         * Habilitar modo demo con imagen estática
+         */
+        function enableDemoMode() {
+            console.log('[CAM] Activando modo demo...');
+            
+            // Detener stream anterior
+            stopCamera();
+            
+            // Configurar modo demo
+            isDemoMode = true;
+            retryAttempts = 0;
+            
+            // Ocultar overlays
+            hideCameraLoading();
+            hideCameraError();
+            
+            // Obtener elementos
+            const videoElement = document.getElementById('localVideo');
+            const demoImage = document.getElementById('demoImage');
+            const demoOverlay = document.getElementById('demoOverlay');
+            
+            // Configurar dimensiones del demo
+            const demoWidth = 640;
+            const demoHeight = 480;
+            
+            // Configurar canvas de captura con dimensiones del demo
+            captureCanvas = document.getElementById('captureCanvas');
+            captureCtx = captureCanvas.getContext('2d');
+            captureCanvas.width = demoWidth;
+            captureCanvas.height = demoHeight;
+            
+            // Configurar canvas de motion detection
+            motionCanvas = document.getElementById('motionCanvas');
+            motionCtx = motionCanvas.getContext('2d');
+            motionCanvas.width = demoWidth;
+            motionCanvas.height = demoHeight;
+            
+            // Cargar imagen demo en canvas
+            demoImage.onload = () => {
+                captureCtx.drawImage(demoImage, 0, 0, demoWidth, demoHeight);
+                
+                // Iniciar funcionalidades en modo demo
+                motionDetectionEnabled = true;
+                previousFrame = null;
+                
+                startFrameCapture();
+                startMotionDetection();
+                
                 // Notificar al servidor que la cámara está lista
                 socket.emit('cameraReady');
-
-                // Actualizar estado
-                document.getElementById('cameraStatus').textContent = 'Esperando espectador...';
-
-            } catch (error) {
-                console.error('Error accediendo a la cámara:', error);
-                alert('Error accediendo a la cámara. Verifica los permisos.');
-            }
+                
+                // Actualizar UI
+                document.getElementById('cameraStatus').textContent = 'Modo Demo';
+                document.querySelector('#cameraScreen .video-overlay .status-dot').className = 'status-dot connected';
+                demoOverlay.style.display = 'block';
+                
+                console.log('[CAM] Modo demo iniciado');
+            };
+            
+            // Forzar carga de la imagen
+            demoImage.style.display = 'block';
+            
+            // Actualizar estado de controls
+            document.getElementById('motionStatus').textContent = 'ON';
+            document.getElementById('autoStatus').textContent = 'OFF';
+            document.getElementById('flashlightAutoIndicator').className = 'auto-indicator off';
         }
 
         function stopCamera() {
             stopFrameStreaming();
             autoFlashlightEnabled = false;
+            
+            // Detener stream de cámara real
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
                 localStream = null;
             }
+            
+            // Si estaba en modo demo, ocultar indicadores
+            if (isDemoMode) {
+                document.getElementById('demoOverlay').style.display = 'none';
+                document.getElementById('demoImage').style.display = 'none';
+            }
+            
             motionDetectionEnabled = false;
             previousFrame = null;
         }
@@ -1117,6 +1409,23 @@
             const frameIntervalMs = Math.floor(1000 / targetFps);
             
             frameInterval = setInterval(() => {
+                // En modo demo, usar imagen del canvas
+                if (isDemoMode) {
+                    if (!captureCanvas || !socket) return;
+                    
+                    // Usar el canvas que ya tiene la imagen demo
+                    const imageData = captureCanvas.toDataURL('image/jpeg', frameQuality);
+                    
+                    socket.emit('stream_frame', {
+                        image: imageData,
+                        timestamp: Date.now(),
+                        frameNumber: currentFrameNumber++,
+                        isDemo: true
+                    });
+                    return;
+                }
+                
+                // Modo normal con cámara real
                 if (!localStream || !socket) return;
                 
                 const video = document.getElementById('localVideo');
@@ -1125,19 +1434,20 @@
                 // Capturar frame en el canvas de captura
                 captureCtx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
                 
-                // Convertir a JPEG con calidad comprimida para传输
+                // Convertir a JPEG con calidad comprimida para transmisión
                 const imageData = captureCanvas.toDataURL('image/jpeg', frameQuality);
                 
                 // Enviar frame al servidor
                 socket.emit('stream_frame', {
                     image: imageData,
                     timestamp: Date.now(),
-                    frameNumber: currentFrameNumber++
+                    frameNumber: currentFrameNumber++,
+                    isDemo: false
                 });
                 
             }, frameIntervalMs);
             
-            console.log(`[STREAM] Captura iniciada a ${targetFps} FPS (intervalo: ${frameIntervalMs}ms)`);
+            console.log(`[STREAM] Captura iniciada a ${targetFps} FPS (intervalo: ${frameIntervalMs}ms), Modo: ${isDemoMode ? 'Demo' : 'Normal'}`);
         }
 
         /**
