@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajedrez Online - PvP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <style>
+        .chess-board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 1;
+            border: 4px solid #8B4513;
+        }
+        .chess-square {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .chess-square.light {
+            background-color: #f0d9b5;
+        }
+        .chess-square.dark {
+            background-color: #b58863;
+        }
+        .chess-square.selected {
+            background-color: #7fc97f !important;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+        }
+        .chess-square.possible-move {
+            background-color: #ffd700 !important;
+            opacity: 0.7;
+        }
+        .chess-square:hover {
+            opacity: 0.8;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+        }
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .flag {
+            display: inline-block;
+            font-size: 1.5rem;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-900 via-purple-900 to-pink-900 min-h-screen">
+    
+    <!-- Login/Register Screen -->
+    <div id="authScreen" class="container mx-auto px-4 py-8">
+        <div class="max-w-md mx-auto bg-white rounded-xl shadow-2xl p-8">
+            <h1 class="text-4xl font-bold text-center mb-8 text-purple-800">♔ Ajedrez Online ♔</h1>
+            
+            <div id="loginForm">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Iniciar Sesión</h2>
+                <input type="email" id="loginEmail" placeholder="Correo electrónico" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                <input type="password" id="loginPassword" placeholder="Contraseña" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                <button onclick="login()" 
+                    class="w-full bg-purple-600 text-white py-3 rounded-lg font-semibold hover:bg-purple-700 transition">
+                    Ingresar
+                </button>
+                <p class="text-center mt-4 text-gray-600">
+                    ¿No tienes cuenta? 
+                    <button onclick="showRegister()" class="text-purple-600 font-semibold">Crear cuenta</button>
+                </p>
+            </div>
+
+            <div id="registerForm" style="display: none;">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-800">Crear Cuenta</h2>
+                <input type="text" id="registerName" placeholder="Nombre de usuario" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                <select id="registerCountry" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                    <option value="">Selecciona tu país</option>
+                    <option value="🇦🇷 Argentina">🇦🇷 Argentina</option>
+                    <option value="🇧🇴 Bolivia">🇧🇴 Bolivia</option>
+                    <option value="🇧🇷 Brasil">🇧🇷 Brasil</option>
+                    <option value="🇨🇱 Chile">🇨🇱 Chile</option>
+                    <option value="🇨🇴 Colombia">🇨🇴 Colombia</option>
+                    <option value="🇨🇷 Costa Rica">🇨🇷 Costa Rica</option>
+                    <option value="🇨🇺 Cuba">🇨🇺 Cuba</option>
+                    <option value="🇪🇨 Ecuador">🇪🇨 Ecuador</option>
+                    <option value="🇸🇻 El Salvador">🇸🇻 El Salvador</option>
+                    <option value="🇪🇸 España">🇪🇸 España</option>
+                    <option value="🇬🇹 Guatemala">🇬🇹 Guatemala</option>
+                    <option value="🇭🇳 Honduras">🇭🇳 Honduras</option>
+                    <option value="🇲🇽 México">🇲🇽 México</option>
+                    <option value="🇳🇮 Nicaragua">🇳🇮 Nicaragua</option>
+                    <option value="🇵🇦 Panamá">🇵🇦 Panamá</option>
+                    <option value="🇵🇾 Paraguay">🇵🇾 Paraguay</option>
+                    <option value="🇵🇪 Perú">🇵🇪 Perú</option>
+                    <option value="🇵🇷 Puerto Rico">🇵🇷 Puerto Rico</option>
+                    <option value="🇩🇴 República Dominicana">🇩🇴 República Dominicana</option>
+                    <option value="🇺🇾 Uruguay">🇺🇾 Uruguay</option>
+                    <option value="🇻🇪 Venezuela">🇻🇪 Venezuela</option>
+                    <option value="🌍 Otro">🌍 Otro</option>
+                </select>
+                <input type="email" id="registerEmail" placeholder="Correo electrónico" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                <input type="password" id="registerPassword" placeholder="Contraseña (mínimo 6 caracteres)" 
+                    class="w-full px-4 py-3 mb-4 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600">
+                <button onclick="register()" 
+                    class="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition">
+                    Crear Cuenta
+                </button>
+                <p class="text-center mt-4 text-gray-600">
+                    ¿Ya tienes cuenta? 
+                    <button onclick="showLogin()" class="text-purple-600 font-semibold">Iniciar sesión</button>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Game Screen -->
+    <div id="gameScreen" style="display: none;" class="container mx-auto px-4 py-4">
+        
+        <!-- Profile Section -->
+        <div id="profileSection" class="max-w-6xl mx-auto bg-white rounded-xl shadow-2xl p-6 mb-6">
+            <div class="flex justify-between items-center flex-wrap gap-4">
+                <div>
+                    <h2 class="text-3xl font-bold text-purple-800" id="playerName"></h2>
+                    <p class="text-gray-600" id="playerCountry"></p>
+                </div>
+                <div class="flex gap-6 flex-wrap">
+                    <div class="text-center">
+                        <p class="text-sm text-gray-600">Nivel</p>
+                        <p class="text-2xl font-bold text-blue-600" id="playerLevel">1</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm text-gray-600">💎 Gemas</p>
+                        <p class="text-2xl font-bold text-purple-600" id="playerGems">0</p>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-sm text-gray-600">🪙 Monedas</p>
+                        <p class="text-2xl font-bold text-yellow-600" id="playerCoins">500</p>
+                    </div>
+                </div>
+                <button onclick="logout()" 
+                    class="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition">
+                    Cerrar Sesión
+                </button>
+            </div>
+        </div>
+
+        <!-- Menu Section -->
+        <div id="menuSection" class="max-w-6xl mx-auto bg-white rounded-xl shadow-2xl p-8">
+            <h2 class="text-3xl font-bold text-center mb-8 text-purple-800">Modo de Juego</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <button onclick="searchMatch()" 
+                    class="bg-gradient-to-r from-green-500 to-blue-500 text-white py-8 px-6 rounded-xl text-2xl font-bold hover:shadow-2xl transition transform hover:scale-105">
+                    ⚔️ Jugar PvP Online
+                    <p class="text-sm mt-2">Apuesta: 100 monedas</p>
+                </button>
+                <button onclick="showProfile()" 
+                    class="bg-gradient-to-r from-purple-500 to-pink-500 text-white py-8 px-6 rounded-xl text-2xl font-bold hover:shadow-2xl transition transform hover:scale-105">
+                    👤 Ver Perfil
+                </button>
+            </div>
+        </div>
+
+        <!-- Game Board Section -->
+        <div id="boardSection" style="display: none;" class="max-w-6xl mx-auto">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- Opponent Info -->
+                <div class="bg-white rounded-xl shadow-2xl p-6 lg:order-1">
+                    <h3 class="text-xl font-bold mb-4 text-center text-red-600">Oponente</h3>
+                    <div class="text-center">
+                        <p class="text-2xl font-bold" id="opponentName">Esperando...</p>
+                        <p class="text-gray-600" id="opponentCountry"></p>
+                        <p class="text-sm text-gray-500 mt-2">Nivel: <span id="opponentLevel">-</span></p>
+                        <div class="mt-4 p-4 bg-red-100 rounded-lg">
+                            <p class="text-sm text-gray-600">⏱️ Tiempo</p>
+                            <p class="text-3xl font-bold text-red-600" id="opponentTimer">5:00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chess Board -->
+                <div class="bg-white rounded-xl shadow-2xl p-6 lg:order-2">
+                    <div class="mb-4 text-center">
+                        <p class="text-lg font-semibold" id="turnIndicator">Tu turno</p>
+                        <p class="text-sm text-gray-600" id="gameStatus">Partida en curso</p>
+                    </div>
+                    <div class="chess-board mx-auto" id="chessBoard"></div>
+                    <div class="mt-4 flex gap-4 justify-center">
+                        <button onclick="forfeitGame()" 
+                            class="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition">
+                            Rendirse
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Player Info -->
+                <div class="bg-white rounded-xl shadow-2xl p-6 lg:order-3">
+                    <h3 class="text-xl font-bold mb-4 text-center text-green-600">Tú</h3>
+                    <div class="text-center">
+                        <p class="text-2xl font-bold" id="gamePlayerName"></p>
+                        <p class="text-gray-600" id="gamePlayerCountry"></p>
+                        <p class="text-sm text-gray-500 mt-2">Nivel: <span id="gamePlayerLevel">-</span></p>
+                        <div class="mt-4 p-4 bg-green-100 rounded-lg">
+                            <p class="text-sm text-gray-600">⏱️ Tiempo</p>
+                            <p class="text-3xl font-bold text-green-600" id="playerTimer">5:00</p>
+                        </div>
+                        <div class="mt-4 p-4 bg-yellow-100 rounded-lg">
+                            <p class="text-sm text-gray-600">💰 En juego</p>
+                            <p class="text-2xl font-bold text-yellow-600">200 monedas</p>
+                            <p class="text-xs text-gray-500 mt-1">El ganador se lleva todo</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Searching Match Modal -->
+    <div id="searchModal" class="modal">
+        <div class="bg-white rounded-xl p-8 max-w-md text-center">
+            <div class="spinner mx-auto mb-4"></div>
+            <h3 class="text-2xl font-bold mb-4">Buscando oponente...</h3>
+            <p class="text-gray-600 mb-4">Jugadores en línea: <span id="onlinePlayers">0</span></p>
+            <p class="text-sm text-gray-500 mb-4">Tiempo de búsqueda: <span id="searchTime">0</span>s</p>
+            <button onclick="cancelSearch()" 
+                class="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600 transition">
+                Cancelar
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Result Modal -->
+    <div id="resultModal" class="modal">
+        <div class="bg-white rounded-xl p-8 max-w-md text-center">
+            <h3 class="text-4xl font-bold mb-4" id="resultTitle">¡Victoria!</h3>
+            <p class="text-xl mb-4" id="resultMessage"></p>
+            <div class="mb-6">
+                <p class="text-lg">💰 Monedas: <span id="resultCoins" class="font-bold text-yellow-600"></span></p>
+                <p class="text-lg">💎 Gemas: <span id="resultGems" class="font-bold text-purple-600"></span></p>
+            </div>
+            <button onclick="closeResultModal()" 
+                class="bg-blue-500 text-white px-8 py-3 rounded-lg hover:bg-blue-600 transition text-lg font-semibold">
+                Continuar
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyAfqvmcg2Y6GOAQOVjFvXi46hp3NTCT6ZE",
+            authDomain: "abby-cdb30.firebaseapp.com",
+            databaseURL: "https://abby-cdb30-default-rtdb.firebaseio.com",
+            projectId: "abby-cdb30",
+            storageBucket: "abby-cdb30.appspot.com",
+            messagingSenderId: "738241914654",
+            appId: "1:738241914654:android:80351b3fed2f4dc3688b0f"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const database = firebase.database();
+
+        // Global Variables
+        let currentUser = null;
+        let currentGame = null;
+        let selectedSquare = null;
+        let playerColor = null;
+        let playerTimerInterval = null;
+        let opponentTimerInterval = null;
+        let searchTimerInterval = null;
+        let searchStartTime = 0;
+
+        // Chess Pieces Unicode
+        const pieces = {
+            white: { king: '♔', queen: '♕', rook: '♖', bishop: '♗', knight: '♘', pawn: '♙' },
+            black: { king: '♚', queen: '♛', rook: '♜', bishop: '♝', knight: '♞', pawn: '♟' }
+        };
+
+        // Initial Board Setup
+        let board = [
+            ['♜','♞','♝','♛','♚','♝','♞','♜'],
+            ['♟','♟','♟','♟','♟','♟','♟','♟'],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['','','','','','','',''],
+            ['♙','♙','♙','♙','♙','♙','♙','♙'],
+            ['♖','♘','♗','♕','♔','♗','♘','♖']
+        ];
+
+        // Authentication Functions
+        function showRegister() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('registerForm').style.display = 'block';
+        }
+
+        function showLogin() {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+        }
+
+        async function register() {
+            const name = document.getElementById('registerName').value.trim();
+            const country = document.getElementById('registerCountry').value;
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value;
+
+            if (!name || !country || !email || !password) {
+                alert('Por favor completa todos los campos');
+                return;
+            }
+
+            if (password.length < 6) {
+                alert('La contraseña debe tener al menos 6 caracteres');
+                return;
+            }
+
+            try {
+                const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+                const userId = userCredential.user.uid;
+
+                await database.ref('users/' + userId).set({
+                    name: name,
+                    country: country,
+                    level: 1,
+                    gems: 0,
+                    coins: 500,
+                    wins: 0,
+                    losses: 0,
+                    createdAt: Date.now()
+                });
+
+                alert('¡Cuenta creada exitosamente!');
+                showLogin();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function login() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+
+            if (!email || !password) {
+                alert('Por favor completa todos los campos');
+                return;
+            }
+
+            try {
+                await auth.signInWithEmailAndPassword(email, password);
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        function logout() {
+            if (currentGame) {
+                forfeitGame();
+            }
+            auth.signOut();
+        }
+
+        // Auth State Observer
+        auth.onAuthStateChanged(async (user) => {
+            if (user) {
+                currentUser = user;
+                const userRef = database.ref('users/' + user.uid);
+                const snapshot = await userRef.once('value');
+                const userData = snapshot.val();
+
+                document.getElementById('authScreen').style.display = 'none';
+                document.getElementById('gameScreen').style.display = 'block';
+                
+                updateProfileDisplay(userData);
+                
+                // Set user as online
+                database.ref('online/' + user.uid).set({
+                    name: userData.name,
+                    country: userData.country,
+                    level: userData.level,
+                    timestamp: Date.now()
+                });
+
+                // Remove user from online when they disconnect
+                database.ref('online/' + user.uid).onDisconnect().remove();
+            } else {
+                currentUser = null;
+                document.getElementById('authScreen').style.display = 'block';
+                document.getElementById('gameScreen').style.display = 'none';
+            }
+        });
+
+        function updateProfileDisplay(userData) {
+            document.getElementById('playerName').textContent = userData.name;
+            document.getElementById('playerCountry').textContent = userData.country;
+            document.getElementById('playerLevel').textContent = userData.level;
+            document.getElementById('playerGems').textContent = userData.gems;
+            document.getElementById('playerCoins').textContent = userData.coins;
+        }
+
+        function showProfile() {
+            document.getElementById('menuSection').style.display = 'block';
+            document.getElementById('boardSection').style.display = 'none';
+        }
+
+        // Matchmaking Functions
+        async function searchMatch() {
+            const userRef = database.ref('users/' + currentUser.uid);
+            const snapshot = await userRef.once('value');
+            const userData = snapshot.val();
+
+            if (userData.coins < 100) {
+                alert('No tienes suficientes monedas. Necesitas al menos 100 monedas para jugar.');
+                return;
+            }
+
+            // Check for available games
+            const gamesRef = database.ref('games');
+            const gamesSnapshot = await gamesRef.orderByChild('status').equalTo('waiting').once('value');
+            
+            let foundGame = false;
+
+            if (gamesSnapshot.exists()) {
+                const games = gamesSnapshot.val();
+                for (let gameId in games) {
+                    const game = games[gameId];
+                    if (game.player1 !== currentUser.uid && !game.player2) {
+                        // Join existing game
+                        await gamesRef.child(gameId).update({
+                            player2: currentUser.uid,
+                            player2Name: userData.name,
+                            player2Country: userData.country,
+                            player2Level: userData.level,
+                            status: 'playing',
+                            currentTurn: game.player1,
+                            startTime: Date.now(),
+                            player1Time: 300,
+                            player2Time: 300
+                        });
+
+                        currentGame = gameId;
+                        playerColor = 'black';
+                        foundGame = true;
+
+                        // Deduct coins
+                        await userRef.update({ coins: userData.coins - 100 });
+                        
+                        startGame(gameId);
+                        break;
+                    }
+                }
+            }
+
+            if (!foundGame) {
+                // Create new game
+                const newGameRef = gamesRef.push();
+                const gameId = newGameRef.key;
+
+                await newGameRef.set({
+                    player1: currentUser.uid,
+                    player1Name: userData.name,
+                    player1Country: userData.country,
+                    player1Level: userData.level,
+                    player2: null,
+                    status: 'waiting',
+                    board: board,
+                    createdAt: Date.now()
+                });
+
+                currentGame = gameId;
+                playerColor = 'white';
+
+                // Deduct coins
+                await userRef.update({ coins: userData.coins - 100 });
+
+                // Show searching modal
+                document.getElementById('searchModal').classList.add('active');
+                searchStartTime = Date.now();
+                updateOnlinePlayersCount();
+                
+                searchTimerInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - searchStartTime) / 1000);
+                    document.getElementById('searchTime').textContent = elapsed;
+                }, 1000);
+
+                // Listen for opponent
+                const gameRef = database.ref('games/' + gameId);
+                gameRef.on('value', (snapshot) => {
+                    const game = snapshot.val();
+                    if (game && game.status === 'playing' && game.player2) {
+                        clearInterval(searchTimerInterval);
+                        document.getElementById('searchModal').classList.remove('active');
+                        startGame(gameId);
+                        gameRef.off('value');
+                    }
+                });
+
+                // Timeout after 30 seconds
+                setTimeout(async () => {
+                    const checkSnapshot = await gameRef.once('value');
+                    const checkGame = checkSnapshot.val();
+                    if (checkGame && checkGame.status === 'waiting') {
+                        await gameRef.remove();
+                        clearInterval(searchTimerInterval);
+                        document.getElementById('searchModal').classList.remove('active');
+                        
+                        // Refund coins
+                        const refundSnapshot = await userRef.once('value');
+                        const refundData = refundSnapshot.val();
+                        await userRef.update({ coins: refundData.coins + 100 });
+                        updateProfileDisplay(refundData);
+                        
+                        alert('No se encontraron oponentes disponibles. Inténtalo de nuevo más tarde.');
+                    }
+                }, 30000);
+            }
+        }
+
+        function cancelSearch() {
+            if (currentGame) {
+                database.ref('games/' + currentGame).remove();
+                currentGame = null;
+            }
+            clearInterval(searchTimerInterval);
+            document.getElementById('searchModal').classList.remove('active');
+            
+            // Refund coins
+            database.ref('users/' + currentUser.uid).once('value').then((snapshot) => {
+                const userData = snapshot.val();
+                database.ref('users/' + currentUser.uid).update({ coins: userData.coins + 100 });
+                updateProfileDisplay(userData);
+            });
+        }
+
+        async function updateOnlinePlayersCount() {
+            const onlineRef = database.ref('online');
+            const snapshot = await onlineRef.once('value');
+            const count = snapshot.numChildren();
+            document.getElementById('onlinePlayers').textContent = count;
+        }
+
+        // Game Functions
+        async function startGame(gameId) {
+            document.getElementById('menuSection').style.display = 'none';
+            document.getElementById('boardSection').style.display = 'block';
+
+            const gameRef = database.ref('games/' + gameId);
+            const snapshot = await gameRef.once('value');
+            const game = snapshot.val();
+
+            // Update player info
+            const userSnapshot = await database.ref('users/' + currentUser.uid).once('value');
+            const userData = userSnapshot.val();
+            
+            document.getElementById('gamePlayerName').textContent = userData.name;
+            document.getElementById('gamePlayerCountry').textContent = userData.country;
+            document.getElementById('gamePlayerLevel').textContent = userData.level;
+
+            if (playerColor === 'white') {
+                document.getElementById('opponentName').textContent = game.player2Name;
+                document.getElementById('opponentCountry').textContent = game.player2Country;
+                document.getElementById('opponentLevel').textContent = game.player2Level;
+            } else {
+                document.getElementById('opponentName').textContent = game.player1Name;
+                document.getElementById('opponentCountry').textContent = game.player1Country;
+                document.getElementById('opponentLevel').textContent = game.player1Level;
+            }
+
+            renderBoard(game.board);
+
+            // Listen to game updates
+            gameRef.on('value', (snapshot) => {
+                const gameData = snapshot.val();
+                if (!gameData) return;
+
+                if (gameData.status === 'finished') {
+                    handleGameEnd(gameData);
+                    return;
+                }
+
+                board = gameData.board;
+                renderBoard(board);
+                updateTurnIndicator(gameData);
+                updateTimers(gameData);
+            });
+
+            startTimers(gameRef);
+        }
+
+        function renderBoard(boardData) {
+            const boardElement = document.getElementById('chessBoard');
+            boardElement.innerHTML = '';
+
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = 'chess-square ' + ((row + col) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = row;
+                    square.dataset.col = col;
+                    square.textContent = boardData[row][col];
+                    square.onclick = () => handleSquareClick(row, col);
+                    boardElement.appendChild(square);
+                }
+            }
+        }
+
+        function handleSquareClick(row, col) {
+            const gameRef = database.ref('games/' + currentGame);
+            
+            gameRef.once('value').then((snapshot) => {
+                const game = snapshot.val();
+                
+                // Check if it's player's turn
+                const isMyTurn = (playerColor === 'white' && game.currentTurn === game.player1) ||
+                                 (playerColor === 'black' && game.currentTurn === game.player2);
+                
+                if (!isMyTurn) {
+                    alert('No es tu turno');
+                    return;
+                }
+
+                const piece = board[row][col];
+                
+                if (selectedSquare) {
+                    // Try to move
+                    if (isValidMove(selectedSquare.row, selectedSquare.col, row, col)) {
+                        makeMove(selectedSquare.row, selectedSquare.col, row, col, gameRef, game);
+                    }
+                    clearSelection();
+                } else if (piece && isPieceOwned(piece)) {
+                    // Select piece
+                    selectedSquare = { row, col };
+                    highlightSquare(row, col);
+                }
+            });
+        }
+
+        function isPieceOwned(piece) {
+            const whitePieces = '♔♕♖♗♘♙';
+            const blackPieces = '♚♛♜♝♞♟';
+            
+            if (playerColor === 'white') {
+                return whitePieces.includes(piece);
+            } else {
+                return blackPieces.includes(piece);
+            }
+        }
+
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            // Simplified chess rules - just check if destination is empty or has opponent piece
+            const piece = board[fromRow][fromCol];
+            const target = board[toRow][toCol];
+            
+            if (target && isPieceOwned(target)) {
+                return false; // Can't capture own piece
+            }
+            
+            return true; // Simplified - in real chess, need to check piece-specific moves
+        }
+
+        async function makeMove(fromRow, fromCol, toRow, toCol, gameRef, game) {
+            // Update board
+            board[toRow][toCol] = board[fromRow][fromCol];
+            board[fromRow][fromCol] = '';
+
+            // Check for checkmate (simplified - just check if king was captured)
+            let winner = null;
+            let loser = null;
+            let kingCaptured = false;
+
+            for (let row of board) {
+                for (let piece of row) {
+                    if (piece === '♔' || piece === '♚') {
+                        // Kings still on board
+                    }
+                }
+            }
+
+            // Switch turn
+            const nextTurn = game.currentTurn === game.player1 ? game.player2 : game.player1;
+
+            await gameRef.update({
+                board: board,
+                currentTurn: nextTurn,
+                lastMove: Date.now()
+            });
+        }
+
+        function highlightSquare(row, col) {
+            document.querySelectorAll('.chess-square').forEach(sq => {
+                sq.classList.remove('selected');
+            });
+            
+            const square = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            square.classList.add('selected');
+        }
+
+        function clearSelection() {
+            selectedSquare = null;
+            document.querySelectorAll('.chess-square').forEach(sq => {
+                sq.classList.remove('selected');
+            });
+        }
+
+        function updateTurnIndicator(game) {
+            const isMyTurn = (playerColor === 'white' && game.currentTurn === game.player1) ||
+                             (playerColor === 'black' && game.currentTurn === game.player2);
+            
+            document.getElementById('turnIndicator').textContent = isMyTurn ? '🟢 Tu turno' : '🔴 Turno del oponente';
+        }
+
+        function startTimers(gameRef) {
+            // Timer logic - counts down when it's player's turn
+            setInterval(() => {
+                gameRef.once('value').then((snapshot) => {
+                    const game = snapshot.val();
+                    if (!game || game.status !== 'playing') return;
+
+                    const isMyTurn = (playerColor === 'white' && game.currentTurn === game.player1) ||
+                                     (playerColor === 'black' && game.currentTurn === game.player2);
+                    
+                    if (isMyTurn) {
+                        let myTime = playerColor === 'white' ? game.player1Time : game.player2Time;
+                        myTime--;
+                        
+                        if (myTime <= 0) {
+                            // Time's up - player loses
+                            endGame(gameRef, playerColor === 'white' ? game.player2 : game.player1);
+                            return;
+                        }
+
+                        if (playerColor === 'white') {
+                            gameRef.update({ player1Time: myTime });
+                        } else {
+                            gameRef.update({ player2Time: myTime });
+                        }
+                    }
+                });
+            }, 1000);
+        }
+
+        function updateTimers(game) {
+            const myTime = playerColor === 'white' ? game.player1Time : game.player2Time;
+            const opTime = playerColor === 'white' ? game.player2Time : game.player1Time;
+
+            document.getElementById('playerTimer').textContent = formatTime(myTime || 300);
+            document.getElementById('opponentTimer').textContent = formatTime(opTime || 300);
+        }
+
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        async function forfeitGame() {
+            if (!currentGame) return;
+            
+            if (confirm('¿Estás seguro de que quieres rendirte?')) {
+                const gameRef = database.ref('games/' + currentGame);
+                const snapshot = await gameRef.once('value');
+                const game = snapshot.val();
+                
+                const winner = playerColor === 'white' ? game.player2 : game.player1;
+                await endGame(gameRef, winner);
+            }
+        }
+
+        async function endGame(gameRef, winnerId) {
+            await gameRef.update({
+                status: 'finished',
+                winner: winnerId,
+                endTime: Date.now()
+            });
+        }
+
+        async function handleGameEnd(game) {
+            const isWinner = game.winner === currentUser.uid;
+            
+            // Update user stats
+            const userRef = database.ref('users/' + currentUser.uid);
+            const snapshot = await userRef.once('value');
+            const userData = snapshot.val();
+
+            let updates = {};
+            if (isWinner) {
+                updates.coins = userData.coins + 200; // Win back 100 + opponent's 100
+                updates.wins = (userData.wins || 0) + 1;
+                updates.gems = userData.gems + 10;
+            } else {
+                updates.losses = (userData.losses || 0) + 1;
+                updates.gems = userData.gems + 2;
+            }
+
+            await userRef.update(updates);
+
+            // Show result modal
+            document.getElementById('resultTitle').textContent = isWinner ? '🏆 ¡Victoria!' : '😢 Derrota';
+            document.getElementById('resultMessage').textContent = isWinner ? 
+                '¡Felicidades! Has ganado la partida.' : 
+                'Mejor suerte la próxima vez.';
+            document.getElementById('resultCoins').textContent = isWinner ? '+200' : '-100';
+            document.getElementById('resultGems').textContent = isWinner ? '+10' : '+2';
+            document.getElementById('resultModal').classList.add('active');
+
+            // Clean up
+            database.ref('games/' + currentGame).off();
+            currentGame = null;
+            
+            // Update profile
+            const updatedSnapshot = await userRef.once('value');
+            updateProfileDisplay(updatedSnapshot.val());
+        }
+
+        function closeResultModal() {
+            document.getElementById('resultModal').classList.remove('active');
+            document.getElementById('boardSection').style.display = 'none';
+            document.getElementById('menuSection').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
